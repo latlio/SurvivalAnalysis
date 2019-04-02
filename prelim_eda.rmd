@@ -1,21 +1,28 @@
 ---
-title: "Preliminary EDA"
-author: "Madison Hobbs"
+title: "Survival Analysis Project: Preliminary EDA"
+author: "Madison Hobbs & Lathan Liou"
+class: "MATH150: Methods in Biostatistics"
 date: "4/2/2019"
-output: html_document
+output: pdf_document
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-```
-
-```{r}
 library(tidyverse)
+library(GGally)
+data <- read_csv("AIDSdata.csv")
 ```
 
-```{r}
-data <- read_csv("AIDSdata.csv")
-data
+# Introduction
+Our project seeks to understand time of survival until an AIDS defining event or death. In the first phase of our project, we want to understand the distributions of our time-to-event variables and the remaining explanatory variables. Further, we are curious to see whether there exists correlated relationships between any of our explanatory variables. This will be important during our modeling phase when we have to consider whether to include correlated variables or not.
+
+# Exploratory Data Analysis: Correlation
+We present a pairs plot of our explanatory variables, excluding id, our time-to-event variables, and our censoring variables to 1) visualize the distribution of the variables and 2) identify potential pair-wise correlation. \texttt{cd4} and \texttt{strat2} have a correlation coefficient of 0.74, which indicates moderate to strong correlation. This makes sense since \texttt{strat2} is the indicator variable for the continuous variable, \texttt{cd4}. Additionally, in our data, \texttt{tx} and \texttt{txgrp} are the same since the data only contains \texttt{txgrp} values of 1 and 2. Lastly, we would like to note that \texttt{sex}, \texttt{ivdrug}, and \texttt{hemophil} are highly unbalanced variables, meaning that one level of the variables is disproportionately represented relative to the other level(s).
+
+```{r, fig.height=8, fig.width=13}
+data %>%
+  select(tx:age) %>%
+  ggpairs()
 ```
 
 There are in fact 8 people who were diagnosed and died at different times. Otherwise, for non-censrored individuals, death time was the same as diagnosis time.
