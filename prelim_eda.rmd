@@ -1,0 +1,66 @@
+---
+title: "Preliminary EDA"
+author: "Madison Hobbs"
+date: "4/2/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+```
+
+```{r}
+data <- read_csv("AIDSdata.csv")
+data
+```
+
+There are in fact 8 people who were diagnosed and died at different times. Otherwise, for non-censrored individuals, death time was the same as diagnosis time.
+
+```{r}
+filter(data, censor == 1, time != time_d, censor_d==1) 
+filter(data, censor == 1, censor_d==0)  # who were diagnosed but ended up living
+```
+
+No one was on the 3 nor 4 treatments. 
+
+```{r}
+data %>% group_by(txgrp) %>% summarise(n())
+ggplot(data, aes(x = txgrp)) + geom_histogram()
+```
+
+
+
+
+```{r}
+non_censored = data %>% filter(censor == 1)
+
+ggplot(data, aes(x = time))
+```
+
+Keep 
+
+```{r}
+non_censored_diag <- data %>% filter(censor == 1)
+non_censored_death <- data %>% filter(censor_d == 1)
+ggplot(non_censored_diag, aes(x = time)) + geom_histogram() + facet_grid(.~tx)
+ggplot(data, aes(x = time_d)) + geom_histogram() + facet_grid(.~tx)
+```
+
+Having prior zdv doesn't really help you:
+
+```{r}
+non_censored_diag <- data %>% filter(censor == 1)
+ggplot(non_censored_diag, aes(x = time, y= log(priorzdv))) + geom_point()
+```
+
+```{r}
+ data %>% group_by(censor) %>% count()
+
+ggplot(non_censored_diag, aes(x = time)) + geom_histogram() + facet_grid(.~sex)
+non_censored_diag %>% group_by(sex) %>% count()
+```
+
