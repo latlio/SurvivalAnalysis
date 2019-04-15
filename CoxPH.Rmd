@@ -102,6 +102,8 @@ anova(fit, fit.int)
 
 As we might suspect, none of the interaction terms are needed, so to avoid overfitting, we won't include the interaction terms in our final model. 
 
+#Interpreting the Model
+
 #Sources
 https://statisticalhorizons.com/multicollinearity (Great article on multicollinearity)
 Harrell, F. (2015) Regression Modeling Strategies. (life-saving textbook on all things survival analysis)
