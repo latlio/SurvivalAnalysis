@@ -128,3 +128,8 @@ f_p
 cox.zph(coxph(Surv(time,censor) ~ karnof+cd4, data=aids))
 ```
 
+# Somthing New: Power Analysis Simulation
+
+Madison will be performing power analysis using simulation to determine the optimal sample size. 
+
+I will use 
