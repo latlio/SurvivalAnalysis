@@ -104,6 +104,8 @@ As we might suspect, none of the interaction terms are needed, so to avoid overf
 
 #Interpreting the Model
 
+#Check Influential observations, Log Linearity
+
 #Sources
 https://statisticalhorizons.com/multicollinearity (Great article on multicollinearity)
 Harrell, F. (2015) Regression Modeling Strategies. (life-saving textbook on all things survival analysis)
