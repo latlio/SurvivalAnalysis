@@ -1,0 +1,47 @@
+---
+title: "Something New"
+author: "Madison Hobbs & Lathan Liou"
+class: "MATH150: Methods in Biostatistics"
+date: "4/13/2019"
+output: pdf_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(survival)
+library(survminer)
+data <- read_csv("AIDSdata.csv")
+```
+
+#Survival Curves
+```{r}
+fit <- survfit(Surv(time, censor) ~ 1, 
+               data = data, 
+               type = "kaplan-meier", 
+               conf.typ ="log-log", 
+               se.fit = TRUE)
+
+#plot KM curve
+ggsurvplot(fit, data = data, 
+           risk.table = TRUE, 
+           conf.int = TRUE, 
+           ggtheme = theme_minimal(), 
+           risk.table.y.text.col = T, 
+           risk.table.y.text = F)
+```
+
+#Bootstrapping (Lathan)
+##Challenges
+Personally, my biggest challenge when learning something new is deciding to what degree I'd like to understand the topic. There is a surface understanding of the definition, a more difficult understanding of the mathematics, and an even more difficult understanding of the conceptual applications. In the case of bootstrap, I think I will find challenging understanding the math behind how bootstrap works.
+
+##Sources
+https://www.datacamp.com/community/tutorials/bootstrap-r (Overview of bootstrapping)
+Efron, B. (1981) Censored Data and the Boostrap. Journal of the American Statistical Association.
+https://stats.stackexchange.com/questions/22017/sample-size-and-cross-validation-methods-for-cox-regression-predictive-models
+
+##A brief overview of Bootstrap and its applications to survival analysis
+Bootstrap relies on sampling with replacement of the sample data and is commonly used to estimate the standard error for any statistic. If we had an original sample of $n$ elements,$X$, we resample $X$ $m$ times to get new bootstrap samples ${X_i,...X_m}$ and calculate the desired statistic of each bootstrap sample, ${t(X_i),...t(X_m)}$. 
+
