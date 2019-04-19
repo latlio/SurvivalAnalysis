@@ -1,0 +1,111 @@
+---
+title: "CoxPH"
+author: "Lathan Liou"
+date: "4/13/2019"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(survival)
+library(survminer)
+library(rms)
+library(glmnet)
+library(broom)
+data <- read_csv("AIDSdata.csv")
+
+#parse as factor
+data <- data %>%
+  mutate(tx = as.factor(tx),
+         txgrp = as.factor(txgrp),
+         strat2 = as.factor(strat2),
+         sex = as.factor(sex),
+         raceth = as.factor(raceth),
+         ivdrug = as.factor(ivdrug),
+         hemophil = as.factor(hemophil),
+         karnof = as.factor(karnof))
+```
+
+# Choosing the Number of Parameters
+Our goal is to develop a multivariable survival model for time until death (or diagnosis). There are 69 deaths (or diagnoses) among 782 patients. The first thing I want to assess is a full additive model . Categorical predictors were expanded using dummy variables. I also expanded continuous predictors by fitting cubic spline functions. I chose not to include `txgrp` and `strat2` because they were found to be highly correlated with other predictor variables from our EDA. There are a total of 21 d.f. from our candidate variables, which is about 16% of the number of deaths, so according to Harrell 2015, there is some hope that our fitted model may validate.
+
+```{r}
+options(scipen = 999)
+fit <- coxph(Surv(time, censor) ~ tx + sex + raceth + ivdrug + hemophil + karnof + cd4 + priorzdv + age, data = data)
+fit %>% tidy()
+
+#check multicollinearity
+vif(fit)
+```
+
+The likelihood ratio $\chi^2$ statistic is 91.05 with 21 d.f. After considering whether variables can be clustered into new variables based on our conventional knowledge, and finding none in the moment, I decided to try shrinkage to reduce our dimensionality. Here, I'm using a lasso penalty Cox PH regression model to select our most important features.
+
+Also, we should note that none of the variables have a particularly high variance inflation factor (VIF). While `karnof80` and `karnof90` have VIFs, I'm not too concerned because they are dummy variables which necessarily have high VIFs due to the smaller proportion of cases in our reference category, `karnof70`. 
+
+```{r}
+#initialize covariate matrix
+x <- model.matrix(Surv(time, censor) ~ tx + sex + raceth + ivdrug + hemophil + karnof + cd4 + priorzdv + age, data)
+
+#cross validate lambda
+cv.fit <- cv.glmnet(x, Surv(data$time, data$censor), family = "cox", maxit = 1000)
+
+#plot cross-validated lambdas
+plot(cv.fit)
+
+lassofit <- glmnet(x, Surv(data$time, data$censor), family = "cox", maxit = 1000)
+
+#see which coefficients were kept
+active.coefs <- predict(lassofit, type = 'coefficients', s = cv.fit$lambda.min)
+active.coefs
+```
+
+We see that the dummy variable for American Indian, the dummy variable for a Karnofsky score of 80 and priorzdv were shrunk to 0. If we rerun our Cox PH model without priorzdv, which from our EDA was found to not be highly correlated with time, and conduct a likelihood ratio test, let's see what happens.
+
+```{r}
+fit2 <- coxph(Surv(time, censor) ~ tx + sex + raceth + ivdrug + hemophil + karnof + cd4 + age, data = data)
+anova(fit, fit2)
+```
+
+Based on our likelihood ratio test results of a $\chi^2_1 = 0.2086$ and a p-value of 0.6479, priorzdv is not needed in the model. 
+
+I do think our model can be more parsimonious; however, so in order to avoid overspecification, I look back at the Wald's p-values of the full additive model, and I see that treatment, karnof, cd4, and age (slightly above 0.05) are statistically significant. Before proceeding, I will acknowledge here that there is a fine line between trying not to overspecify and introducing bias by adding a "parsimony bias" in our model. Let's fit a model with only those 4 variables and conduct a likelihood ratio test between this model and the additive model without `priorzdv`.
+
+```{r}
+fit3 <- coxph(Surv(time, censor) ~ tx + karnof + cd4 + age, data = data)
+anova(fit2, fit3)
+```
+
+With a $\chi^2_8 = 6.72$ and a p-value of 0.5667, we conclude that none of the other variables in the additive model were needed. 
+
+Because age had a borderline p-value, let's try removing it from the model and seeing whether it's important or not.
+
+```{r}
+fit4 <- coxph(Surv(time, censor) ~ tx + karnof + cd4, data = data)
+anova(fit3, fit4)
+```
+
+It turns out, with a $\chi^2_1 = 2.23$ and a p-value of 0.1353, that age is not needed in the model. 
+
+If our goal is choosing a model that *best describes the data*, I would go with the parsimonious one. However, if we're trying to win the best prediction prize, it might be better to leave all the variables in except for the multicollinear ones as that will inflate standard errors without necessarily improving prediction. The rationale here is that the marginal variables will have *some* real predictive value even if it's slight. To that end, let's test whether interactions are significant or not. Specifically, because we have reason to believe that there my be interacting effects with treatment group (the clinical variable of interest), let's interact treatment with our categorical covariates along with adjusting for cd4, priorzdv, and age.
+
+```{r}
+fit.int <- coxph(Surv(time, censor) ~ tx*sex + tx*raceth + tx*ivdrug + tx*hemophil + tx*karnof + cd4 + priorzdv + age, data = data)
+fit.int
+```
+
+Now, let's consider whether the interaction variables are needed. 
+
+```{r}
+anova(fit, fit.int)
+```
+
+As we might suspect, none of the interaction terms are needed, so to avoid overfitting, we won't include the interaction terms in our final model. 
+
+#Interpreting the Model
+
+#Check Influential observations, Log Linearity
+
+#Sources
+https://statisticalhorizons.com/multicollinearity (Great article on multicollinearity)
+Harrell, F. (2015) Regression Modeling Strategies. (life-saving textbook on all things survival analysis)
