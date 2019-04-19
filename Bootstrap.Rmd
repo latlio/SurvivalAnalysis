@@ -1,0 +1,91 @@
+---
+title: "Something New"
+author: "Madison Hobbs & Lathan Liou"
+class: "MATH150: Methods in Biostatistics"
+date: "4/13/2019"
+output: pdf_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(survival)
+library(survminer)
+data <- read_csv("AIDSdata.csv")
+```
+
+#Survival Curves
+```{r}
+fit <- survfit(Surv(time, censor) ~ 1, 
+               data = data, 
+               type = "kaplan-meier", 
+               conf.typ ="log-log", 
+               se.fit = TRUE)
+
+#plot KM curve
+ggsurvplot(fit, data = data, 
+           risk.table = TRUE, 
+           conf.int = TRUE, 
+           ggtheme = theme_minimal(), 
+           risk.table.y.text.col = T, 
+           risk.table.y.text = F)
+```
+
+#Bootstrapping (Lathan)
+##Challenges
+Personally, my biggest challenge when learning something new is deciding to what degree I'd like to understand the topic. There is a surface understanding of the definition, a more difficult understanding of the mathematics, and an even more difficult understanding of the conceptual applications. In the case of bootstrap, I think I will find challenging understanding the math behind how bootstrap works.
+
+##Sources
+https://www.datacamp.com/community/tutorials/bootstrap-r (Overview of bootstrapping)
+Efron, B. (1981) Censored Data and the Boostrap. Journal of the American Statistical Association.
+https://stats.stackexchange.com/questions/22017/sample-size-and-cross-validation-methods-for-cox-regression-predictive-models
+
+##A brief overview of Bootstrap and its applications to survival analysis
+Bootstrap relies on sampling with replacement of the sample data and in the case of modelling, it is used to evaluate the performance of the model on the original sample. The estimate of the likely performance of the final model on future data is estimated by the average of all the indices computed on the original sample. If we had an original sample of $n$ elements,$X$, we resample $X$ $m$ times to get new bootstrap samples ${X_i,...X_m}$ each with size $n$, derive a model in the bootstrap sample, and apply it to the original sample.
+
+Bootstrapping validates the *process* of obtaining our original Cox PH model. It also tends to provide good estimates of the future performance of our final model if the same modeling process was used in our bootstrap samples. One of the strengths of bootstrapping is thati can estimate the bias due to overfitting in our final model - let's call this quantity "optimism". You can subtract from the original sample estimate the "optimism" to get the bias-corrected estimate of predictive accuracy.
+
+```{r}
+#add data to model fit so bootstrap can re-sample
+final.fit <- cph(Surv(time, censor) ~ tx + karnof + cd4, data = data)
+g <- update(final.fit, x = TRUE, y = TRUE)
+set.seed(47)
+
+#bootstrap validation
+validate(g, B = 300)
+```
+
+Training here is defined as the accuracy when evaluated on the bootstrap sample and test is when the model is applied to the original sample. Judging from the bootstrap bias-corrected $R^2 = 0.1146$, we don't overfit -- which is promising! Our $D_{xy}$ is 0.5632 which is the difference between the probability of concordance and the probability of discordance of pairs of predicted survival times and pairs of observed survival times. This is decently close to 1, although I wonder if we can get it higher. We can try being less parsimonious with our model.
+
+```{r}
+final.fit2 <- cph(Surv(time, censor) ~ tx + karnof + cd4 + age, data = data)
+g2 <- update(final.fit2, x = TRUE, y = TRUE)
+set.seed(47)
+
+#bootstrap validation
+validate(g2, B = 300)
+```
+
+That didn't seem to change things by much.
+
+```{r}
+ddist <- datadist(data)
+options(datadist = 'ddist')
+
+#plot effect of each predictor on log survival time
+ggplot(Predict(final.fit, ref.zero = T),
+       vanmes = 'names',
+       sepdiscrete = 'vertical')
+```
+
+This plot shows the effect of each predictor on log survival time. Predicted values have been centered. 95% confidence intervals are also shown for the continuous variables. We observe that as cd4 count increases, the log of the relative hazard decreases. This makes sense since low CD4 cells are known to be a result of the HIV virus killing them off. As Karnofsky score decreases, the log of the relative hazard goes up, which is to be expected. It seems that the treatment group including IDV is associated with a lower log relative hazard. 
+
+```{r}
+#plot estimated change in median survival time for each predictor
+options(digit = 3)
+plot(summary(final.fit), log = TRUE, main = "")
+```
+
+Here, I also plot the estimated change in median survival time for each predictor. Different shaded areas of bar indicate different confidence levels (.9, 0.95, 0.99). We see that as the cd4 count goes from 22.25 to 135.75, the median survival time decreases by more than half. Or when the Karnofsky score goes from 70 to 90, we observe a three-fold increase in median survival time.

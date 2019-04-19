@@ -101,6 +101,19 @@ ggplot(non_censored, aes(x = time, y= log(priorzdv))) +
 # Cox PH model
 
 ```{r}
+data <- data %>%
+  mutate(tx = as.factor(tx),
+         txgrp = as.factor(txgrp),
+         strat2 = as.factor(strat2),
+         sex = as.factor(sex),
+         raceth = as.factor(raceth),
+         ivdrug = as.factor(ivdrug),
+         hemophil = as.factor(hemophil),
+         karnof = as.factor(karnof))
+```
+
+
+```{r}
 modeling_data <- aids %>% 
   select(-id, -time_d, -censor_d)
 coxph(Surv(time,censor) ~ tx, data = aids) %>% tidy()
@@ -112,21 +125,45 @@ ggsurvplot(survfit(Surv(time,censor) ~ tx, data=aids),censor=T, conf.int=T) + gg
 Make sure all the variables we are putting into backward selection are not in violation of the proportional hazards assumptions. Happily, none of the variables are in violation since no p-value is under 0.05.
 
 ```{r}
-cox.zph(coxph(Surv(time,censor) ~ tx+strat2+sex+raceth+ivdrug+hemophil+karnof+cd4+priorzdv+age, data=aids))
+cox.zph(coxph(Surv(time,censor) ~ tx+sex+raceth+ivdrug+hemophil+karnof+cd4+priorzdv+age, data=data))
 ```
 
 
 ```{r}
-f_aic <- selectCox(Surv(time,censor)~tx+strat2+sex+raceth+ivdrug+hemophil+karnof+cd4+priorzdv+age, data=aids, rule="aic")
+f_aic <- selectCox(Surv(time,censor)~tx+sex+raceth+ivdrug+hemophil+karnof+cd4+priorzdv+age, data=data, rule="aic")
 f_aic
-cox.zph(coxph(Surv(time,censor) ~ karnof+cd4, data=aids))
+cox.zph(coxph(Surv(time,censor) ~ karnof+cd4, data=data))
+```
+
+
+```{python}
+y = [9,3,4] 
+```
+
+https://slundberg.github.io/shap/notebooks/NHANES%20I%20Survival%20Model.html
+
+
+https://xgboost.readthedocs.io/en/latest/tutorials/model.html
+
+
+```{r}
+f_p <- selectCox(Surv(time,censor)~tx+sex+raceth+ivdrug+hemophil+karnof+cd4+priorzdv+age, data=data, rule="p")
+f_p
+cox.zph(coxph(Surv(time,censor) ~ karnof+cd4, data=data))
+```
+
+# Interaction
+
+```{r}
+cox.zph(coxph(Surv(time,censor) ~ (tx+sex+raceth+ivdrug+hemophil+karnof+cd4+priorzdv+age)^2, data=data))
 ```
 
 ```{r}
-f_p <- selectCox(Surv(time,censor)~tx+strat2+sex+raceth+ivdrug+hemophil+karnof+cd4+priorzdv+age, data=aids, rule="p")
-f_p
-cox.zph(coxph(Surv(time,censor) ~ karnof+cd4, data=aids))
+f_aic <- selectCox(Surv(time,censor)~(karnof+cd4)^2, data=data, rule="aic")
+f_aic
+cox.zph(coxph(Surv(time,censor) ~ (karnof+cd4)^2, data=data))
 ```
+
 
 # Somthing New: Power Analysis Simulation
 

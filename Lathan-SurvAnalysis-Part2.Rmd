@@ -1,0 +1,192 @@
+---
+title: "Cox PH Model and Something New"
+author: "Madison Hobbs & Lathan Liou"
+class: "MATH150: Methods in Biostatistics"
+date: "4/19/2019"
+output: pdf_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(survival)
+library(survminer)
+library(rms)
+library(glmnet)
+library(broom)
+library(xtable)
+data <- read_csv("AIDSdata.csv")
+
+#parse as factor
+data <- data %>%
+  mutate(tx = as.factor(tx),
+         txgrp = as.factor(txgrp),
+         strat2 = as.factor(strat2),
+         sex = as.factor(sex),
+         raceth = as.factor(raceth),
+         ivdrug = as.factor(ivdrug),
+         hemophil = as.factor(hemophil),
+         karnof = as.factor(karnof))
+```
+
+# Choosing the Number of Parameters
+Our goal is to develop a multivariable survival model for time until death (or diagnosis). In particular, our objective is to build the best predictive model, i.e. we want the highest accuracy on new data. There are 69 deaths (or diagnoses) among 782 patients. The first thing we want to assess is a full additive model. Thus, categorical predictors were expanded using dummy variables. We chose not to include `txgrp` and `strat2` because they were derived (and thus highly correlated with) from other predictor variables. 
+
+```{r, warning=FALSE}
+options(scipen = 999)
+fit <- coxph(Surv(time, censor) ~ tx + sex + raceth + ivdrug + hemophil + karnof + cd4 + priorzdv + age, data = data)
+fit %>% tidy()
+```
+
+We also checked whether any of the covariates were multicollinear with each other, and we see that none of them are multicollinear. 
+
+```{r}
+#check multicollinearity
+vif(fit)
+```
+
+We observe that none of the variables have a particularly high variance inflation factor (VIF). While `karnof80` and `karnof90` have relatively higher VIFs, we're not too concerned because they are dummy variables which necessarily have high VIFs due to the smaller proportion of cases in our reference category, `karnof70`. 
+
+The likelihood ratio $\chi^2$ statistic is 91.05 with 21 d.f. After considering whether variables can be mutating into new variables based on our conventional knowledge, and thinking of none in the moment, we decided to try shrinkage to reduce our dimensionality. Here, we're using a lasso penalty Cox PH regression model to select our most important features.
+
+```{r}
+set.seed(47)
+#initialize covariate matrix
+x <- model.matrix(Surv(time, censor) ~ tx + sex + raceth + ivdrug + hemophil + karnof + cd4 + priorzdv + age, data)
+
+#cross validate lambda
+cv.fit <- cv.glmnet(x, Surv(data$time, data$censor), family = "cox", maxit = 1000)
+
+#plot cross-validated lambdas
+plot(cv.fit)
+
+lassofit <- glmnet(x, Surv(data$time, data$censor), family = "cox", maxit = 1000)
+
+#see which coefficients were kept
+active.coefs <- predict(lassofit, type = 'coefficients', s = cv.fit$lambda.min)
+```
+
+\begin{table}[ht]
+\centering
+\begin{tabular}{rr}
+  \hline
+ & 1 \\ 
+  \hline
+(Intercept) & 0.00 \\ 
+  tx1 & -0.58 \\ 
+  sex2 & 0.13 \\ 
+  raceth2 & -0.07 \\ 
+  raceth3 & 0.00 \\ 
+  raceth4 & 0.64 \\ 
+  raceth5 & 0.00 \\ 
+  ivdrug2 & -0.06 \\ 
+  ivdrug3 & -0.24 \\ 
+  hemophil1 & 0.04 \\ 
+  karnof80 & 0.00 \\ 
+  karnof90 & -0.62 \\ 
+  karnof100 & -0.98 \\ 
+  cd4 & -0.01 \\ 
+  priorzdv & 0.00 \\ 
+  age & 0.01 \\ 
+   \hline
+\end{tabular}
+\end{table}
+
+We see that the dummy variable for Hispanic and American Indian, the dummy variable for a Karnofsky score of 80 and priorzdv were shrunk to 0. If we rerun our Cox PH model without priorzdv, which from our EDA was found to not be highly correlated with time, and conduct a likelihood ratio test, let's see what happens.
+
+```{r, warning=FALSE}
+fit2 <- coxph(Surv(time, censor) ~ tx + sex + raceth + ivdrug + hemophil + karnof + cd4 + age, data = data)
+anova(fit, fit2)
+```
+
+Based on our likelihood ratio test results of a $\chi^2_1 = 0.2086$ and a p-value of 0.6479, priorzdv is not needed in the model. 
+
+We do think our model can be more parsimonious; however, so as to avoid overspecification, we look back at the Wald's p-values of the full additive model, and we see that treatment, karnof, cd4, and age (slightly above 0.05) are statistically significant. Before proceeding, we acknowledge that there is a fine line between trying not to overspecify our model and missing potential predictor variables that can contribute some explanatory power. Let's fit a model with only those 4 variables and conduct a likelihood ratio test between this model and the additive model without `priorzdv`.
+
+```{r}
+fit3 <- coxph(Surv(time, censor) ~ tx + karnof + cd4 + age, data = data)
+anova(fit2, fit3)
+```
+
+With a $\chi^2_8 = 6.72$ and a p-value of 0.5667, we conclude that none of the other variables in the additive model were needed. 
+
+Because age had a borderline p-value, let's try removing it from the model and seeing whether it's important or not.
+
+```{r, warning=FALSE}
+fit4 <- coxph(Surv(time, censor) ~ tx + karnof + cd4, data = data)
+anova(fit3, fit4)
+```
+
+It turns out, with a $\chi^2_1 = 2.23$ and a p-value of 0.1353, that age is not needed in the model.
+
+One nagging thought is that marginal variables might have *some* real predictive value even if it's slight. To that end, let's test whether interactions are significant or not. Specifically, because we have reason to believe that there my be interacting effects with treatment group (the clinical variable of interest), let's interact treatment with our categorical covariates along with adjusting for cd4, priorzdv, and age.
+
+```{r, warning=FALSE}
+fit.int <- coxph(Surv(time, censor) ~ tx*sex + tx*raceth + tx*ivdrug + tx*hemophil + tx*karnof + cd4 + priorzdv + age, data = data)
+anova(fit, fit.int)
+```
+
+As we might suspect, none of the interaction terms are needed, so to avoid overfitting, we won't include the interaction terms in our final model. 
+
+# Testing Assumptions
+
+## Influential Observations
+In brief, an influential observation is one that is an outlier (unusual time to failure given covariates) and has leverage (an unusual observation in the x-direction). This has the effect of strongly influencing $\beta$. To check influence, I'm using dfbeta values which measures the change in $\beta$ when a purported influential point is removed. 
+
+```{r}
+#plot dfbeta plot
+ggcoxdiagnostics(fit4, type = "dfbeta",
+                 linear.predictions = FALSE, ggtheme = theme_bw())
+
+#identify influential points according to dfbeta
+dfbeta <- residuals(fit4, type="dfbeta")
+dfbeta
+
+#check cd4 influential points
+data[dfbeta[,5] > 0.0005,]
+```
+
+The above index plots show that comparing the magnitudes of the largest dfbeta values to the regression coefficients suggests that none of the observations is super influential, even though some of the dfbeta values for `cd4` and `tx` are large compared with the others. Generally, we should be careful removing influential observations and throwing away data unless there's a *clear* reason we should (e.g. poor data entry), which we didn't find when checking the influential points for `cd4`. If we look at the deviance residuals for outliers, we might initially be concerned because the distribution does not seem symmetric, with many patients having negative residuals that mean they "lived too long". 
+
+```{r}
+ggcoxdiagnostics(fit4, type = "deviance",
+                 linear.predictions = FALSE, ggtheme = theme_bw())
+```
+
+But then, we remember that our data was imbalanced to begin with! The majority of patients lived until the last time point. 
+
+#Bootstrapping (Lathan)
+
+##Challenges
+Personally, my biggest challenge when learning something new is deciding to what degree I'd like to understand the topic. There is a surface understanding of the definition, a more difficult understanding of the mathematics, and an even more difficult understanding of the conceptual applications. In the case of bootstrap, I think I will find challenging understanding the math behind how bootstrap works.
+
+##A brief overview of Bootstrap and its applications to survival analysis
+Bootstrap relies on sampling with replacement of the sample data and in the case of modelling, it is used to evaluate the performance of the model on the original sample. The estimate of the likely performance of the final model on future data is estimated by the average of all the indices computed on the original sample. If we had an original sample of $n$ elements,$X$, we resample $X$ $m$ times to get new bootstrap samples ${X_i,...X_m}$ each with size $n$, derive a model in the bootstrap sample, and apply it to the original sample.
+
+Bootstrapping validates the *process* of obtaining our original Cox PH model. It also tends to provide good estimates of the future performance of our final model if the same modeling process was used in our bootstrap samples. One of the strengths of bootstrapping is thati can estimate the bias due to overfitting in our final model - let's call this quantity "optimism". You can subtract from the original sample estimate the "optimism" to get the bias-corrected estimate of predictive accuracy.
+
+```{r}
+#add data to model fit so bootstrap can re-sample
+final.fit <- cph(Surv(time, censor) ~ tx + karnof + cd4, data = data)
+g <- update(final.fit, x = TRUE, y = TRUE)
+set.seed(47)
+
+#bootstrap validation
+validate(g, B = 300)
+```
+
+Training here is defined as the accuracy when evaluated on the bootstrap sample and test is when the model is applied to the original sample. Our $D_{xy}$ is 0.5632 which is the difference between the probability of concordance and the probability of discordance of pairs of predicted survival times and pairs of observed survival times. This is essentially a measure of our accuracy of our model on new data.
+
+# Things left to do 
+\begin{enumerate}
+\item Check log linearity assumption
+\item Interpret model
+\item Check confidence interval estimates of bootstrap and compare to likelihood estimates
+
+#Sources
+https://statisticalhorizons.com/multicollinearity (Great article on multicollinearity)
+Harrell, F. (2015) Regression Modeling Strategies. (great textbook on all things survival analysis)
+https://www.datacamp.com/community/tutorials/bootstrap-r (Overview of bootstrapping)
+https://stats.stackexchange.com/questions/22017/sample-size-and-cross-validation-methods-for-cox-regression-predictive-models
