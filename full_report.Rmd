@@ -24,6 +24,7 @@ aids <- data
 #parse as factor
 data <- data %>%
   mutate(tx = as.factor(tx),
+         time = as.numeric(time),
          txgrp = as.factor(txgrp),
          strat2 = as.factor(strat2),
          sex = as.factor(sex),
@@ -327,6 +328,9 @@ fit5 %>% tidy()
 
 Now we do some calculations. We want to see whether $ln(\frac{h_{cd4+100}(t)}{h_{cd4}(t)}) = 70\beta$ turns out to be relative constant. Between group0 and group1 of cd4, the log hazard ratio is $ln(\frac{e^{-1.49}}{e^0}) = -1.49$. Between group1 and group2 of cd4, the log hazard ratio is $\frac{e^{-2.84}}{e^{-1.49}} = -1.35$. We can already see that the coefficients for group3 and group4 are whack, which is probably due to a small number of observations within those categories. I would conclude from the log hazard ratios calculated above (they're relatively similar) that it's probably safe to say that `cd4` can be modeled as a continuous predictor. 
 
+## Interpreting our final model
+The final model obtained after selecting features via LASSO was $$ln(\frac{h_i(t)}{h_0(t)}) = \beta_1tx1 + \gamma_1karnof80 + \gamma_2karnof90 + \gamma_3karnof100 + \theta_1 cd4$$
+
 #Bootstrapping (Lathan)
 
 ##Challenges
@@ -348,6 +352,37 @@ validate(g, B = 300)
 ```
 
 Training here is defined as the accuracy when evaluated on the bootstrap sample and test is when the model is applied to the original sample. Our $D_{xy}$ is 0.5632 which is the difference between the probability of concordance and the probability of discordance of pairs of predicted survival times and pairs of observed survival times. This is essentially a measure of our accuracy of our model on new data.
+
+Let's compare the standard errors between our bootstrap coefficients and our likelihood coefficients from our cox PH model. 
+```{r}
+#initialize parameters
+B <- 300
+n <- nrow(data)
+
+#initialize matrix
+bootse <- matrix(NA, nrow = 1, ncol = 5)
+
+#bootstrap model and obtain SE for each coefficient
+set.seed(47)
+for(i in 1:B) {
+  j <- sample(1:n, n, TRUE)
+  bootfit <- update(final.fit, data=data, subset=j)
+  bootse <- rbind(bootse, as.vector(sqrt(diag(bootfit$var))))
+}
+
+#remove first row
+bootse <- bootse[-1,]
+
+#compute avg standard errors -- NOT SURE ABOUT THIS STEP
+bootavgse <- colMeans(bootse, 1)
+```
+
+```{r}
+likese <- fit4 %>% tidy() %>% pull(3)
+tibble(likese, bootavgse, coef = c("tx1", "karnof80", "karnof90", "karnof100", "cd4"))
+```
+
+They are pretty similar!
 
 ## Resources
 \begin{itemize}
@@ -386,8 +421,6 @@ I have yet to fully understand what SHAP values are and how to interpret them - 
 
 # Things left to do 
 \begin{enumerate}
-\item Check log linearity assumption
 \item Interpret model
-\item Check confidence interval estimates of bootstrap and compare to likelihood estimates
 \item Train XGBoost and compare standard Cox model with XGBoost model.
 \end{enumerate}
