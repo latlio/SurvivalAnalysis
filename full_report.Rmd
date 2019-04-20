@@ -57,8 +57,7 @@ The following code says: create a new dataframe by taking all the rows in `data`
 all(
   (aids %>% 
      filter(((txgrp == 1 && tx == 0) || (txgrp == 2 && tx == 1)))) 
-  == aids
-) == TRUE
+  == aids) == TRUE
 ```
 
 ## Correlation
@@ -66,9 +65,7 @@ all(
 We present a pairs plot of our explanatory variables, excluding id, our time-to-event variables, and our censoring variables to 1) visualize the distribution of the variables and 2) identify potential pair-wise correlation. \texttt{cd4} and \texttt{strat2} have a correlation coefficient of 0.74, which indicates moderate to strong correlation. This makes sense since \texttt{strat2} is the indicator variable for the continuous variable, \texttt{cd4}. Additionally, as noted just above, \texttt{tx} and \texttt{txgrp} provide the exact same information and therefore are perfectly correlated. Lastly, we would like to note that \texttt{sex}, \texttt{ivdrug}, and \texttt{hemophil} are highly unbalanced variables, meaning that one level of the variables is disproportionately represented relative to the other level(s).
 
 ```{r, fig.height=8, fig.width=13}
-aids %>%
-  select(tx:age) %>%
-  ggpairs()
+aids %>% select(tx:age) %>% ggpairs()
 ```
 
 ## Censored vs. Non-Censored
@@ -87,13 +84,22 @@ dim(aids)         # everyone
 Among those with complete times, we notice from the side-by-side histograms below that both the control and IDV groups are skewed right. This makes sense - for complete observations, it's probably less common for people to last a long time without being diagnosed or dying. The distributions between the control and IDV groups don't look that different however, especially given the tiny sample sizes.
 
 ```{r}
-ggplot(non_censored, aes(x = time)) + geom_histogram(bins = 30) + facet_grid(.~tx) + ggtitle("Complete Observations: Treatment vs. Time to Event") + xlab("Time until AIDS Diagnosis or Death")
+ggplot(non_censored, aes(x = time)) + 
+  geom_histogram(bins = 30) + 
+  facet_grid(.~tx) + ggtitle("Complete Observations: Treatment vs. Time to Event") + 
+  xlab("Time until AIDS Diagnosis or Death")
 ```
  
 When looking at the censored (incomplete) times for diagnosis/death, both control and IDV groups are in the opposite direction (left).
 
 ```{r}
-ggplot(aids %>% filter(censor == 0) %>% mutate(tx=ifelse(tx == 0, "Control", "IDV")), aes(x = time_d)) + geom_histogram(bins = 20) + facet_grid(.~tx) + ggtitle("Incomplete Observations: Treatment vs. Time to Event") + xlab("Time until End of Study")
+ggplot(aids %>% 
+         filter(censor == 0) %>% 
+         mutate(tx=ifelse(tx == 0, "Control", "IDV")), aes(x = time_d)) + 
+  geom_histogram(bins = 20) + 
+  facet_grid(.~tx) + 
+  ggtitle("Incomplete Observations: Treatment vs. Time to Event") + 
+  xlab("Time until End of Study")
 ```
 
 ## Prior ZDV on Complete Observations
@@ -227,14 +233,6 @@ active.coefs <- predict(lassofit, type = 'coefficients', s = cv.fit$lambda.min)
 
 We see that the dummy variable for Hispanic and American Indian, the dummy variable for a Karnofsky score of 80 and priorzdv were shrunk to 0. If we rerun our Cox PH model without priorzdv, which from our EDA was found to not be highly correlated with time, and conduct a likelihood ratio test, let's see what happens.
 
-Before building the model, we first confirm the technical condition of proportional hazards is met by finding no significant p-values in the hypothesis test run below.
-
-```{r}
-cox.zph(coxph(Surv(time,censor) ~ tx + sex + raceth + ivdrug + hemophil + karnof + cd4 + age, data=data))
-```
-
-Then, we build the model below.
-
 ```{r, warning=FALSE}
 fit2 <- coxph(Surv(time, censor) ~ tx + sex + raceth + ivdrug + hemophil + karnof + cd4 + age, data = data)
 anova(fit, fit2)
@@ -292,7 +290,42 @@ ggcoxdiagnostics(fit4, type = "deviance",
                  linear.predictions = FALSE, ggtheme = theme_bw())
 ```
 
-But then, we remember that our data was imbalanced to begin with! The majority of patients lived until the last time point. 
+But then, we remember that our data was imbalanced between those who lived and died to begin with! The majority of patients lived until the last time point. 
+
+## Checking the Log-Linearity Assumption
+In class, we investigated the log-linearity assumption which basically verifies whether a continuous predictor variable is linearly correlated with our log hazard ratio. To do this, we first assume our continuous predictor is categorical, and then we take ratios between the instantaneous relative risks. If the ratios are all roughly the same, then we can assume a linear relationship. In our final model, the only continuous predictor we have is `cd4`, so lets categorize it in the following way.
+
+\begin{table}[ht]
+\centering
+\begin{tabular}{rr}
+  \hline
+ & 1 \\ 
+  \hline
+  0-70 & low (0) \\ 
+  71-140 low-medium (1) \\
+  141-210 & medium (2) \\ 
+  211-280 & medium-high (3) \\ 
+  281-350 & high (4) \\
+   \hline
+\end{tabular}
+\end{table}
+
+```{r}
+#turn cd4 into categorical
+data2 <- data %>%
+  mutate(cd4_group = ifelse(cd4 <= 70, 0,
+                ifelse(cd4 > 71 & cd4 <= 140, 1,
+                       ifelse(cd4 > 141 & cd4 <= 210, 2, 
+                              ifelse(cd4 > 211 & cd4 <= 280, 3,4))))) %>%
+  mutate(cd4_group = as.factor(cd4_group))
+
+#fit our model with the categorical cd4 instead of the continuous one
+fit5 <- coxph(Surv(time, censor) ~ tx + karnof + cd4_group, data = data2)
+
+fit5 %>% tidy()
+```
+
+Now we do some calculations. We want to see whether $ln(\frac{h_{cd4+100}(t)}{h_{cd4}(t)}) = 70\beta$ turns out to be relative constant. Between group0 and group1 of cd4, the log hazard ratio is $ln(\frac{e^{-1.49}}{e^0}) = -1.49$. Between group1 and group2 of cd4, the log hazard ratio is $\frac{e^{-2.84}}{e^{-1.49}} = -1.35$. We can already see that the coefficients for group3 and group4 are whack, which is probably due to a small number of observations within those categories. I would conclude from the log hazard ratios calculated above (they're relatively similar) that it's probably safe to say that `cd4` can be modeled as a continuous predictor. 
 
 #Bootstrapping (Lathan)
 
