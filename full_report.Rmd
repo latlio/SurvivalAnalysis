@@ -114,6 +114,45 @@ ggplot(non_censored, aes(x = time, y= log(priorzdv))) +
   ggtitle("Log of # Months Prior ZDV Treatment vs. Time to Death/Diagnosis")
 ```
 
+## Plotting Survival Curves
+```{r}
+surv <- survfit(Surv(time, censor) ~ 1, 
+               data = data, 
+               type = "kaplan-meier", 
+               conf.typ ="log-log", 
+               se.fit = TRUE)
+#plot KM curve
+ggsurvplot(surv, data = data, 
+           risk.table = TRUE, 
+           conf.int = TRUE, 
+           ggtheme = theme_minimal(), 
+           risk.table.y.text.col = T, 
+           risk.table.y.text = F)
+```
+
+We first fit a survival curve of just the time to death variable. We observe that the overall survival probability of our sample remains relatively high over time and that the last observation is censored. Because treatment is the clinical variable of interest, we next want to see how the survival curves differ between the two treatment groups.
+
+```{r}
+surv2 <- survfit(Surv(time, censor) ~ tx, 
+               data = data, 
+               type = "kaplan-meier", 
+               conf.typ ="log-log", 
+               se.fit = TRUE)
+
+#plot KM curve
+ggsurvplot(surv2, data = data, 
+           risk.table = TRUE, 
+           conf.int = TRUE, 
+           ggtheme = theme_minimal(), 
+           risk.table.y.text.col = T, 
+           risk.table.y.text = F)
+
+#perform log-rank test
+survdiff(Surv(time, censor) ~ tx, data = data, rho = 1)
+```
+
+We see that the treatment group for which IDV was also administered has a higher survival probability over time compared to the control group. Performing the log-rank test to test our null hypothesis of whether $S_0(t) = S_1(t)$ for all t results in a $\chi^2_1 = 9.2$ with a p-value of 0.002. We thus reject the null hypothesis and conclude that there is evidence that supports that the survival probabilities are significantly different between the treatment groups over some time intervals. 
+
 # Cox Proportional Hazards Model
 
 ## Choosing the Number of Parameters
