@@ -124,6 +124,7 @@ ggsurvplot(survfit(Surv(time,censor) ~ tx, data=aids),censor=T, conf.int=T) + gg
 
 Make sure all the variables we are putting into backward selection are not in violation of the proportional hazards assumptions. Happily, none of the variables are in violation since no p-value is under 0.05.
 
+
 ```{r}
 cox.zph(coxph(Surv(time,censor) ~ tx+sex+raceth+ivdrug+hemophil+karnof+cd4+priorzdv+age, data=data))
 ```
