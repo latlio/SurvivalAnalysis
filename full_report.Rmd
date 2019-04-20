@@ -167,7 +167,7 @@ Our goal is to develop a multivariable survival model for time until death (or d
 
 First, we make sure that the technical condition for proportional hazards is met with the hypothesis test below. Since no p-values are significant at the $\alpha = 0.05$ level, we next build the full model.
 
-```{r}
+```{r, warning=FALSE}
 cox.zph(coxph(Surv(time,censor) ~ tx + sex + raceth + ivdrug + hemophil + karnof + cd4 + priorzdv + age, data=data))
 ```
 
@@ -209,23 +209,23 @@ active.coefs <- predict(lassofit, type = 'coefficients', s = cv.fit$lambda.min)
 \centering
 \begin{tabular}{rr}
   \hline
- & 1 \\ 
+  Variable & Lasso-ed $\beta$ \\ 
   \hline
 (Intercept) & 0.00 \\ 
   tx1 & -0.58 \\ 
   sex2 & 0.13 \\ 
   raceth2 & -0.07 \\ 
-  raceth3 & 0.00 \\ 
+  raceth3 & 0.00* \\ 
   raceth4 & 0.64 \\ 
-  raceth5 & 0.00 \\ 
+  raceth5 & 0.00* \\ 
   ivdrug2 & -0.06 \\ 
   ivdrug3 & -0.24 \\ 
   hemophil1 & 0.04 \\ 
-  karnof80 & 0.00 \\ 
+  karnof80 & 0.00* \\ 
   karnof90 & -0.62 \\ 
   karnof100 & -0.98 \\ 
   cd4 & -0.01 \\ 
-  priorzdv & 0.00 \\ 
+  priorzdv & 0.00* \\ 
   age & 0.01 \\ 
    \hline
 \end{tabular}
@@ -299,10 +299,10 @@ In class, we investigated the log-linearity assumption which basically verifies 
 \centering
 \begin{tabular}{rr}
   \hline
- & 1 \\ 
+  Level & Desc \\ 
   \hline
   0-70 & low (0) \\ 
-  71-140 low-medium (1) \\
+  71-140 & low-medium (1) \\
   141-210 & medium (2) \\ 
   211-280 & medium-high (3) \\ 
   281-350 & high (4) \\
@@ -310,7 +310,7 @@ In class, we investigated the log-linearity assumption which basically verifies 
 \end{tabular}
 \end{table}
 
-```{r}
+```{r, warning=FALSE}
 #turn cd4 into categorical
 data2 <- data %>%
   mutate(cd4_group = ifelse(cd4 <= 70, 0,
