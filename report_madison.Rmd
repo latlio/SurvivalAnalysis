@@ -10,7 +10,11 @@ output: pdf_document
 knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
 library(GGally)
-data <- read_csv("AIDSdata.csv")
+library("survival")
+library(survminer)
+library(broom)
+library(pec)
+aids <- read_csv("AIDSdata.csv")
 ```
 
 # Introduction
@@ -24,7 +28,7 @@ Our project seeks to understand time of survival until an AIDS defining event or
 According to the variable information table, we note that `txgrp` could have four levels (1: ZDV + 3TC, 2: ZDV + 3TC + IDV, 3: d4T + 3TC, and 4: d4T + 3TC + IDV). However, this dataset contains only two levels of `txgrp` (1: ZDV + 3TC, 2: ZDV + 3TC + IDV), as shown below:
 
 ```{r}
-data %>% group_by(txgrp) %>% summarise(n())
+aids %>% group_by(txgrp) %>% summarise(n())
 ```
 
 In fact, since the variable `tx` is supposed to indicate whether the treatment contained IDV, we might assume that `txgrp` and `tx` are redundant information in this dataset and that a 1 in `txgrp` is equivalent to a 0 in `tx` while a 2 in `txgrp` is equivalent to a 1 in `tx`. We confirm this hunch below. 
@@ -33,11 +37,11 @@ The following code says: create a new dataframe by taking all the rows in `data`
 
 
 ```{r}
-# Is it true that for every entry in `data`
+# Is it true that for every entry in `aids`
 all(
-  (data %>% 
+  (aids %>% 
      filter(((txgrp == 1 && tx == 0) || (txgrp == 2 && tx == 1)))) 
-  == data
+  == aids
 ) == TRUE
 ```
 
@@ -46,7 +50,7 @@ all(
 We present a pairs plot of our explanatory variables, excluding id, our time-to-event variables, and our censoring variables to 1) visualize the distribution of the variables and 2) identify potential pair-wise correlation. \texttt{cd4} and \texttt{strat2} have a correlation coefficient of 0.74, which indicates moderate to strong correlation. This makes sense since \texttt{strat2} is the indicator variable for the continuous variable, \texttt{cd4}. Additionally, as noted just above, \texttt{tx} and \texttt{txgrp} provide the exact same information and therefore are perfectly correlated. Lastly, we would like to note that \texttt{sex}, \texttt{ivdrug}, and \texttt{hemophil} are highly unbalanced variables, meaning that one level of the variables is disproportionately represented relative to the other level(s).
 
 ```{r, fig.height=8, fig.width=13}
-data %>%
+aids %>%
   select(tx:age) %>%
   ggpairs()
 ```
@@ -58,11 +62,10 @@ It's worth noting that there are, in fact, two censored time-to-event variables.
 Since the primary variable of interest is time to AIDs diagnosis or death, we examine the complete (non-censored) individuals - those who were either diagnosed with AIDS *or* who died over the course of the study. The only caveat is that there are only 69 such individuals out of a study of 851 - most of the participants did not die or get diagnosed before the study's end. 
 
 ```{r}
-non_censored <- data %>% filter(censor == 1) %>% 
+non_censored <- aids %>% filter(censor == 1) %>% 
   mutate(tx=ifelse(tx == 0, "Control", "IDV"))
-View(non_censored)
 dim(non_censored) # complete AIDS or death
-dim(data)         # everyone
+dim(aids)         # everyone
 ```
 
 Among those with complete times, we notice from the side-by-side histograms below that both the control and IDV groups are skewed right. This makes sense - for complete observations, it's probably less common for people to last a long time without being diagnosed or dying. The distributions between the control and IDV groups don't look that different however, especially given the tiny sample sizes.
@@ -74,7 +77,7 @@ ggplot(non_censored, aes(x = time)) + geom_histogram(bins = 30) + facet_grid(.~t
 When looking at the censored (incomplete) times for diagnosis/death, both control and IDV groups are in the opposite direction (left).
 
 ```{r}
-ggplot(data %>% filter(censor == 0) %>% mutate(tx=ifelse(tx == 0, "Control", "IDV")), aes(x = time_d)) + geom_histogram(bins = 20) + facet_grid(.~tx) + ggtitle("Incomplete Observations: Treatment vs. Time to Event") + xlab("Time until End of Study")
+ggplot(aids %>% filter(censor == 0) %>% mutate(tx=ifelse(tx == 0, "Control", "IDV")), aes(x = time_d)) + geom_histogram(bins = 20) + facet_grid(.~tx) + ggtitle("Incomplete Observations: Treatment vs. Time to Event") + xlab("Time until End of Study")
 ```
 
 ## Prior ZDV on Complete Observations
@@ -95,3 +98,76 @@ ggplot(non_censored, aes(x = time, y= log(priorzdv))) +
   ggtitle("Log of # Months Prior ZDV Treatment vs. Time to Death/Diagnosis")
 ```
 
+# Cox PH model
+
+```{r}
+data <- data %>%
+  mutate(tx = as.factor(tx),
+         txgrp = as.factor(txgrp),
+         strat2 = as.factor(strat2),
+         sex = as.factor(sex),
+         raceth = as.factor(raceth),
+         ivdrug = as.factor(ivdrug),
+         hemophil = as.factor(hemophil),
+         karnof = as.factor(karnof))
+```
+
+
+```{r}
+modeling_data <- aids %>% 
+  select(-id, -time_d, -censor_d)
+coxph(Surv(time,censor) ~ tx, data = aids) %>% tidy()
+ggsurvplot(survfit(Surv(time,censor) ~ tx, data=aids),censor=T, conf.int=T) + ggtitle("By Treatment")
+```
+
+## Backward Variable Selection 
+
+Make sure all the variables we are putting into backward selection are not in violation of the proportional hazards assumptions. Happily, none of the variables are in violation since no p-value is under 0.05.
+
+
+```{r}
+cox.zph(coxph(Surv(time,censor) ~ tx+sex+raceth+ivdrug+hemophil+karnof+cd4+priorzdv+age, data=data))
+```
+
+
+```{r}
+f_aic <- selectCox(Surv(time,censor)~tx+sex+raceth+ivdrug+hemophil+karnof+cd4+priorzdv+age, data=data, rule="aic")
+f_aic
+cox.zph(coxph(Surv(time,censor) ~ karnof+cd4, data=data))
+```
+
+
+```{python}
+y = [9,3,4] 
+```
+
+https://slundberg.github.io/shap/notebooks/NHANES%20I%20Survival%20Model.html
+
+
+https://xgboost.readthedocs.io/en/latest/tutorials/model.html
+
+
+```{r}
+f_p <- selectCox(Surv(time,censor)~tx+sex+raceth+ivdrug+hemophil+karnof+cd4+priorzdv+age, data=data, rule="p")
+f_p
+cox.zph(coxph(Surv(time,censor) ~ karnof+cd4, data=data))
+```
+
+# Interaction
+
+```{r}
+cox.zph(coxph(Surv(time,censor) ~ (tx+sex+raceth+ivdrug+hemophil+karnof+cd4+priorzdv+age)^2, data=data))
+```
+
+```{r}
+f_aic <- selectCox(Surv(time,censor)~(karnof+cd4)^2, data=data, rule="aic")
+f_aic
+cox.zph(coxph(Surv(time,censor) ~ (karnof+cd4)^2, data=data))
+```
+
+
+# Somthing New: Power Analysis Simulation
+
+Madison will be performing power analysis using simulation to determine the optimal sample size. 
+
+I will use 
