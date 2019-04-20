@@ -28,7 +28,7 @@ data <- data %>%
 ```
 
 # Choosing the Number of Parameters
-Our goal is to develop a multivariable survival model for time until death (or diagnosis). There are 69 deaths (or diagnoses) among 782 patients. The first thing I want to assess is a full additive model . Categorical predictors were expanded using dummy variables. I also expanded continuous predictors by fitting cubic spline functions. I chose not to include `txgrp` and `strat2` because they were found to be highly correlated with other predictor variables from our EDA. There are a total of 21 d.f. from our candidate variables, which is about 16% of the number of deaths, so according to Harrell 2015, there is some hope that our fitted model may validate.
+Our goal is to develop a multivariable survival model for time until death (or diagnosis). There are 69 deaths (or diagnoses) among 782 patients. The first thing I want to assess is a full additive model. Thus, categorical predictors were expanded using dummy variables. I chose not to include `txgrp` and `strat2` because they were found to be highly correlated with other predictor variables from our EDA. I also checked whether any of the covariates were multicollinear with each other, and we see that none of the multicollinear. 
 
 ```{r}
 options(scipen = 999)
@@ -39,11 +39,12 @@ fit %>% tidy()
 vif(fit)
 ```
 
-The likelihood ratio $\chi^2$ statistic is 91.05 with 21 d.f. After considering whether variables can be clustered into new variables based on our conventional knowledge, and finding none in the moment, I decided to try shrinkage to reduce our dimensionality. Here, I'm using a lasso penalty Cox PH regression model to select our most important features.
+The likelihood ratio $\chi^2$ statistic is 91.05 with 21 d.f. After considering whether variables can be mutating into new variables based on our conventional knowledge, and thinking of none in the moment, I decided to try shrinkage to reduce our dimensionality. Here, I'm using a lasso penalty Cox PH regression model to select our most important features.
 
 Also, we should note that none of the variables have a particularly high variance inflation factor (VIF). While `karnof80` and `karnof90` have VIFs, I'm not too concerned because they are dummy variables which necessarily have high VIFs due to the smaller proportion of cases in our reference category, `karnof70`. 
 
 ```{r}
+set.seed(47)
 #initialize covariate matrix
 x <- model.matrix(Surv(time, censor) ~ tx + sex + raceth + ivdrug + hemophil + karnof + cd4 + priorzdv + age, data)
 
@@ -105,6 +106,57 @@ As we might suspect, none of the interaction terms are needed, so to avoid overf
 #Interpreting the Model
 
 #Check Influential observations, Log Linearity
+Let's try looking at the deviance residuals for outliers. 
+
+```{r}
+ggcoxdiagnostics(fit4, type = "deviance",
+                 linear.predictions = FALSE, ggtheme = theme_bw())
+
+#identify influential points according to deviance
+data2 <- data %>%
+  mutate(dresids = residuals(fit4, type = "deviance"))
+data2 %>%
+  filter(dresids > 1)
+```
+This plot looks concerning, as we see a nonsymmetrical distribution of deviance residuals around 0. Looking more closely at the outliers, we see now that there are some questionable data. For example, patient 589 has a cd4 count of 0, which according to some literature, warrants a second look (could've been faulty machinery).
+
+What if we removed outliers and retrained the model, going through the exact same process?
+```{r}
+#filter data
+data3 <- data2 %>%
+  filter(!dresids > 1)
+
+#full additive model
+fit_new <- coxph(Surv(time, censor) ~ tx + sex + raceth + ivdrug + hemophil + karnof + cd4 + priorzdv + age, data = data3)
+
+#check multicollinearity
+vif(fit_new)
+
+set.seed(47)
+#initialize covariate matrix
+xnew <- model.matrix(Surv(time, censor) ~ tx + ivdrug + karnof, data3)
+
+#cross validate lambda
+cv.fit.new <- cv.glmnet(xnew, Surv(data3$time, data3$censor), family = "cox", maxit = 1000)
+
+#plot cross-validated lambdas
+plot(cv.fit.new)
+
+lassofit.new <- glmnet(xnew, Surv(data3$time, data3$censor), family = "cox", maxit = 1000)
+
+#see which coefficients were kept
+active.coefs.new <- predict(lassofit.new, type = 'coefficients', s = cv.fit.new$lambda.min)
+
+fit_new2 <- coxph(Surv(time, censor) ~ tx + karnof + cd4 + age, data = data3)
+anova(fit_new, fit_new2)
+```
+
+## Log Linearity
+In class we talked about the linearity assumption of continuous variables and how we could check it by taking the ratios of the relative risks and seeing if they are roughly the same.
+
+```{r}
+ggcoxfunctional(Surv(time, status) ~ age + log(age) + sqrt(age), data = lung)
+```
 
 #Sources
 https://statisticalhorizons.com/multicollinearity (Great article on multicollinearity)

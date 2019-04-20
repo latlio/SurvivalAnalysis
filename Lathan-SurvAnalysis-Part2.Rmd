@@ -31,6 +31,34 @@ data <- data %>%
          karnof = as.factor(karnof))
 ```
 
+#Survival Curves
+```{r}
+surv <- survfit(Surv(time, censor) ~ 1, 
+               data = data, 
+               type = "kaplan-meier", 
+               conf.typ ="log-log", 
+               se.fit = TRUE)
+#plot KM curve
+ggsurvplot(surv, data = data, 
+           risk.table = TRUE, 
+           conf.int = TRUE, 
+           ggtheme = theme_minimal(), 
+           risk.table.y.text.col = T, 
+           risk.table.y.text = F)
+
+surv2 <- survfit(Surv(time, censor) ~ tx, 
+               data = data, 
+               type = "kaplan-meier", 
+               conf.typ ="log-log", 
+               se.fit = TRUE)
+ggsurvplot(surv2, data = data, 
+           risk.table = TRUE, 
+           conf.int = TRUE, 
+           ggtheme = theme_minimal(), 
+           risk.table.y.text.col = T, 
+           risk.table.y.text = F)
+```
+
 # Choosing the Number of Parameters
 Our goal is to develop a multivariable survival model for time until death (or diagnosis). In particular, our objective is to build the best predictive model, i.e. we want the highest accuracy on new data. There are 69 deaths (or diagnoses) among 782 patients. The first thing we want to assess is a full additive model. Thus, categorical predictors were expanded using dummy variables. We chose not to include `txgrp` and `strat2` because they were derived (and thus highly correlated with) from other predictor variables. 
 

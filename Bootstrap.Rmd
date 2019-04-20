@@ -59,6 +59,8 @@ validate(g, B = 300)
 
 Training here is defined as the accuracy when evaluated on the bootstrap sample and test is when the model is applied to the original sample. Judging from the bootstrap bias-corrected $R^2 = 0.1146$, we don't overfit -- which is promising! Our $D_{xy}$ is 0.5632 which is the difference between the probability of concordance and the probability of discordance of pairs of predicted survival times and pairs of observed survival times. This is decently close to 1, although I wonder if we can get it higher. We can try being less parsimonious with our model.
 
+#bootstrap CI for beta is it similar to likelihood betas 
+
 ```{r}
 final.fit2 <- cph(Surv(time, censor) ~ tx + karnof + cd4 + age, data = data)
 g2 <- update(final.fit2, x = TRUE, y = TRUE)
@@ -71,12 +73,21 @@ validate(g2, B = 300)
 That didn't seem to change things by much.
 
 ```{r}
+final.fit3 <- cph(Surv(time, censor) ~ karnof + cd4, data = data)
+g3 <- update(final.fit3, x = TRUE, y = TRUE)
+set.seed(47)
+
+#bootstrap validation
+validate(g3, B = 300)
+```
+
+```{r}
 ddist <- datadist(data)
 options(datadist = 'ddist')
 
 #plot effect of each predictor on log survival time
 ggplot(Predict(final.fit, ref.zero = T),
-       vanmes = 'names',
+       vnames = 'names',
        sepdiscrete = 'vertical')
 ```
 
