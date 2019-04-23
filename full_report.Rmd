@@ -383,10 +383,53 @@ bootavgse <- colMeans(bootse, 1)
 
 #compare bootstrap standard errors and original standard errors
 likese <- fit4 %>% tidy() %>% pull(3)
-tibble(likese, bootavgse, coef = c("tx1", "karnof80", "karnof90", "karnof100", "cd4"))
+comparison <- tibble(likese, bootavgse, coef = c("tx1", "karnof80", "karnof90", "karnof100", "cd4"))
+comparison
 ```
 
-They are pretty similar!
+We see that the standard errors are pretty similar! Here is a boxplot to visualize how the distribution of standard errors compare to our original standard error estimates. 
+
+```{r}
+#add sd of bootstrap
+bootsd <- apply(bootse, 2, sd)
+bootse2 <- rbind(bootse, bootsd)
+
+#add original coxph SE
+bootse3 <- rbind(bootse2, likese)
+
+#turn to tibble
+bootse_tb <- as_tibble(bootse3)
+
+#tidy up bootstrap SE for plotting
+colnames(bootse_tb) <- c("tx1", "karnof80", "karnof90", "karnof100", "cd4")
+bootse_tb_tidy <- bootse_tb %>%
+  gather(beta, value = tx1:cd4)
+
+#mark standard deviations of bootstrap
+bootse_tb_tidy <- bootse_tb_tidy %>%
+  mutate(highlight = ifelse(row.names(bootse_tb_tidy) == 301 | 
+                              row.names(bootse_tb_tidy) == 603 | 
+                              row.names(bootse_tb_tidy) == 905 | 
+                              row.names(bootse_tb_tidy) == 1207 |
+                              row.names(bootse_tb_tidy) == 1509, TRUE, FALSE))
+#mark original coxph SE
+bootse_tb_tidy <- bootse_tb_tidy %>%
+  mutate(highlight2 = ifelse(row.names(bootse_tb_tidy) == 302 | 
+                              row.names(bootse_tb_tidy) == 604 | 
+                              row.names(bootse_tb_tidy) == 906 | 
+                              row.names(bootse_tb_tidy) == 1208 |
+                              row.names(bootse_tb_tidy) == 1510, TRUE, FALSE))
+
+ggplot(bootse_tb_tidy, aes(x = beta, y = `tx1:cd4`)) +
+  geom_boxplot() +
+  geom_point(data = subset(bootse_tb_tidy, highlight), #mark standard deviations in red
+             aes(x = beta, y = `tx1:cd4`),
+             color = "red") +
+  geom_point(data = subset(bootse_tb_tidy, highlight2), #mark original coxph SE
+             aes(x = beta, y = `tx1:cd4`),
+             color = "dodgerblue") + 
+  labs(y = "SE")
+```
 
 The more normal the bootstrap betas, the more comfortable I feel about original beta 
 
