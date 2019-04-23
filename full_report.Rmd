@@ -18,6 +18,7 @@ library(glmnet)
 library(broom)
 library(xtable)
 library(GGally)
+library(ggpubr)
 data <- read_csv("AIDSdata.csv")
 aids <- data
 
@@ -387,7 +388,7 @@ comparison <- tibble(likese, bootavgse, coef = c("tx1", "karnof80", "karnof90", 
 comparison
 ```
 
-We see that the standard errors are pretty similar! Here is a boxplot to visualize how the distribution of standard errors compare to our original standard error estimates. 
+We see that the standard errors are pretty similar! Here is a boxplot to visualize how the distribution of bootstrapped standard errors compare to our original standard error estimates. 
 
 ```{r}
 #add sd of bootstrap
@@ -431,7 +432,77 @@ ggplot(bootse_tb_tidy, aes(x = beta, y = `tx1:cd4`)) +
   labs(y = "SE")
 ```
 
-The more normal the bootstrap betas, the more comfortable I feel about original beta 
+Let's now explore how the bootstrap betas vary compared to our original betas.
+
+```{r}
+#initialize matrix
+bootbeta <- matrix(NA, nrow = 1, ncol = 5)
+
+#bootstrap model and obtain betas
+set.seed(47)
+for(i in 1:B) {
+  j <- sample(1:n, n, TRUE)
+  bootfit <- update(final.fit, data=data, subset=j)
+  bootbeta <- rbind(bootbeta, as.vector(bootfit$coefficients))
+}
+
+#remove first row
+bootbeta <- bootbeta[-1,]
+
+#convert into tibble
+bootbeta_tb <- as_tibble(bootbeta)
+
+#calculate sd for bootstrapped betas
+bootbeta_sd <- apply(bootbeta_tb, 2, sd)
+bootbeta_sd <- as.vector(bootbeta_sd)
+
+#tidy up data
+colnames(bootbeta_tb) <- c("tx1", "karnof80", "karnof90", "karnof100", "cd4")
+bootbeta_tb_tidy <- bootbeta_tb %>%
+  gather(beta, value = tx1:cd4) %>%
+  mutate(value = `tx1:cd4`)
+
+#view densities of the each of the betas
+p1 <- ggplot(bootbeta_tb, aes(tx1)) + 
+  geom_density() +
+  geom_vline(xintercept = as.vector(final.fit$coefficients)[1]) + 
+  geom_vline(xintercept = c(as.vector(final.fit$coefficients)[1] - bootbeta_sd[1],
+                            as.vector(final.fit$coefficients)[1] + bootbeta_sd[1]), linetype = "dotted")
+
+p2 <- ggplot(bootbeta_tb, aes(karnof80)) + 
+  geom_density() + 
+  geom_vline(xintercept = as.vector(final.fit$coefficients)[2]) + 
+  geom_vline(xintercept = c(as.vector(final.fit$coefficients)[2] - bootbeta_sd[2],
+                            as.vector(final.fit$coefficients)[2] + bootbeta_sd[2]), linetype = "dotted")
+
+
+p3 <- ggplot(bootbeta_tb, aes(karnof90)) + 
+  geom_density() + 
+  geom_vline(xintercept = as.vector(final.fit$coefficients)[3]) + 
+  geom_vline(xintercept = c(as.vector(final.fit$coefficients)[3] - bootbeta_sd[3],
+                            as.vector(final.fit$coefficients)[3] + bootbeta_sd[3]), linetype = "dotted")
+
+
+p4 <- ggplot(bootbeta_tb, aes(karnof100)) + 
+  geom_density() +
+  geom_vline(xintercept = as.vector(final.fit$coefficients)[4]) + 
+  geom_vline(xintercept = c(as.vector(final.fit$coefficients)[4] - bootbeta_sd[4],
+                            as.vector(final.fit$coefficients)[4] + bootbeta_sd[4]), linetype = "dotted")
+
+
+p5 <- ggplot(bootbeta_tb, aes(cd4)) + 
+  geom_density() +
+  geom_vline(xintercept = as.vector(final.fit$coefficients)[5]) + 
+  geom_vline(xintercept = c(as.vector(final.fit$coefficients)[5] - bootbeta_sd[5],
+                            as.vector(final.fit$coefficients)[5] + bootbeta_sd[5]), linetype = "dotted")
+
+
+ggarrange(p1, p2, p3, p4, p5, 
+          ncol = 2, 
+          nrow = 3)
+```
+
+As we can see the sampling distribution of the bootstrapped betas fall more or less "normally" around the original estimate (shown by the solid black line). Standard deviation is marked by the dotted lines. Thus, I feel comfortable about the original estimates of the coefficients in that they weren't estimates at the tail end of a theoretical sampling distribution. 
 
 ## Resources
 \begin{itemize}
@@ -439,6 +510,7 @@ The more normal the bootstrap betas, the more comfortable I feel about original 
 \item Harrell, F. (2015) Regression Modeling Strategies. (great textbook on all things survival analysis)
 \item https://www.datacamp.com/community/tutorials/bootstrap-r (Overview of bootstrapping)
 \item https://stats.stackexchange.com/questions/22017/sample-size-and-cross-validation-methods-for-cox-regression-predictive-models
+\item https://stats.stackexchange.com/questions/18084/collinearity-between-categorical-variables (Explanation of VIF for Categorical Variables)
 \end{itemize}
 
 # Gradient Boosted Trees (Madison)
