@@ -475,13 +475,11 @@ p2 <- ggplot(bootbeta_tb, aes(karnof80)) +
   geom_vline(xintercept = c(as.vector(final.fit$coefficients)[2] - bootbeta_sd[2],
                             as.vector(final.fit$coefficients)[2] + bootbeta_sd[2]), linetype = "dotted")
 
-
 p3 <- ggplot(bootbeta_tb, aes(karnof90)) + 
   geom_density() + 
   geom_vline(xintercept = as.vector(final.fit$coefficients)[3]) + 
   geom_vline(xintercept = c(as.vector(final.fit$coefficients)[3] - bootbeta_sd[3],
                             as.vector(final.fit$coefficients)[3] + bootbeta_sd[3]), linetype = "dotted")
-
 
 p4 <- ggplot(bootbeta_tb, aes(karnof100)) + 
   geom_density() +
@@ -489,13 +487,11 @@ p4 <- ggplot(bootbeta_tb, aes(karnof100)) +
   geom_vline(xintercept = c(as.vector(final.fit$coefficients)[4] - bootbeta_sd[4],
                             as.vector(final.fit$coefficients)[4] + bootbeta_sd[4]), linetype = "dotted")
 
-
 p5 <- ggplot(bootbeta_tb, aes(cd4)) + 
   geom_density() +
   geom_vline(xintercept = as.vector(final.fit$coefficients)[5]) + 
   geom_vline(xintercept = c(as.vector(final.fit$coefficients)[5] - bootbeta_sd[5],
                             as.vector(final.fit$coefficients)[5] + bootbeta_sd[5]), linetype = "dotted")
-
 
 ggarrange(p1, p2, p3, p4, p5, 
           ncol = 2, 
