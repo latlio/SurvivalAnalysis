@@ -128,9 +128,8 @@ ggsurvplot(surv, data = data,
            conf.int = TRUE, 
            ggtheme = theme_minimal(), 
            risk.table.y.text.col = T, 
-           risk.table.y.text = F) + 
-  ggtitle("Figure 4. Survival Curve of Time to Event Variable") +
-  theme(plot.title = element_text(size = 10))
+           risk.table.y.text = F,
+           title = "Figure 4. Survival Curve of Time to Event Variable")
 ```
 
 We also fit a survival curve of just the time to death variable. We observe that the overall survival probability of our sample remains relatively high over time and that the last observation is censored. Because treatment is the clinical variable of interest, we next want to see how the survival curves differ between the two treatment groups.
@@ -147,9 +146,8 @@ ggsurvplot(surv2, data = data,
            conf.int = TRUE, 
            ggtheme = theme_minimal(), 
            risk.table.y.text.col = T, 
-           risk.table.y.text = F) +
-  ggtitle("Figure 5. Survival Curves Comparing Control to Treatment of Time to Event Variable ") +
-  theme(plot.title = element_text(size = 10))
+           risk.table.y.text = F,
+           title = "Figure 5. Survival Curves Comparing Control to Treatment of Time to Event Variable")
 ```
 
 ```{r}
@@ -203,8 +201,6 @@ active.coefs <- predict(lassofit, type = 'coefficients', s = cv.fit$lambda.min)
 \begin{table}[ht]
 \centering
 \begin{tabular}{rr}
-  \hline
-  Table 1. CV Lasso Coefficients
   \hline
   Variable & Lasso-ed $\beta$ \\ 
   \hline
@@ -269,18 +265,16 @@ In brief, an influential observation is one that is an outlier (unusual time to 
 ```{r}
 #plot dfbeta plot
 ggcoxdiagnostics(fit4, type = "dfbeta",
-                 linear.predictions = FALSE, ggtheme = theme_bw())
-#identify influential points according to dfbeta
-dfbeta <- residuals(fit4, type="dfbeta")
-#check cd4 influential points
-data[dfbeta[,5] > 0.0005,]
+                 linear.predictions = FALSE, ggtheme = theme_bw(), 
+                 title = "Figure 6. Plot of Dfbeta values for each explanatory variable")
 ```
 
 The above index plots show that comparing the magnitudes of the largest dfbeta values to the regression coefficients suggests that none of the observations is super influential, even though some of the dfbeta values for `cd4` and `tx` are large compared with the others. Generally, we should be careful removing influential observations and throwing away data unless there's a *clear* reason we should (e.g. poor data entry), which we didn't find when checking the influential points for `cd4`. If we look at the deviance residuals for outliers, we might initially be concerned because the distribution does not seem symmetric, with many patients having negative residuals that mean they "lived too long". 
 
 ```{r}
 ggcoxdiagnostics(fit4, type = "deviance",
-                 linear.predictions = FALSE, ggtheme = theme_bw())
+                 linear.predictions = FALSE, ggtheme = theme_bw(),
+                 title = "Figure 7. Plot of Deviance for Final Model")
 ```
 
 But then, we remember that our data was imbalanced between those who lived and died to begin with, because the majority of patients lived until the last time point. Thus, we are not too concerned with influential observations adversely affecting our model. 
@@ -316,12 +310,9 @@ fit5 <- coxph(Surv(time, censor) ~ tx + karnof + cd4_group, data = data2)
 fit5 %>% tidy()
 ```
 
-Now we do some calculations. We want to see whether $ln(\frac{h_{cd4+100}(t)}{h_{cd4}(t)}) = 70\beta$ turns out to be relative constant. Between group0 and group1 of cd4, the log hazard ratio is $ln(\frac{e^{-1.49}}{e^0}) = -1.49$. Between group1 and group2 of cd4, the log hazard ratio is $\frac{e^{-2.84}}{e^{-1.49}} = -1.35$. We can already see that the coefficients for group3 and group4 are whack, which is probably due to a small number of observations within those categories. I would conclude from the log hazard ratios calculated above (they're relatively similar) that it's probably safe to say that `cd4` can be modeled as a continuous predictor. 
+Now we do some calculations. We want to see whether $ln(\frac{h_{cd4+100}(t)}{h_{cd4}(t)}) = 70\beta$ turns out to be relative constant. Between group0 and group1 of cd4, the log hazard ratio is $ln(\frac{e^{-1.49}}{e^0}) = -1.49$. Between group1 and group2 of cd4, the log hazard ratio is $\frac{e^{-2.84}}{e^{-1.49}} = -1.35$. We can already see that the coefficients for group3 and group4 are whack, which is probably due to a small number of observations within those categories. We conclude that from the similar log hazard ratios calculated above that it's probably safe to say that `cd4` can be modeled as a continuous linear predictor. 
 
-## Interpreting our final model
-The final model obtained after selecting features via LASSO was $$ln(\frac{h_i(t)}{h_0(t)}) = \beta_1tx1 + \gamma_1karnof80 + \gamma_2karnof90 + \gamma_3karnof100 + \theta_1 cd4$$
-
-#Bootstrapping (Lathan)
+# Validating our Model by Bootstrapping (Lathan)
 
 ##Challenges
 Personally, my biggest challenge when learning something new is deciding to what degree I'd like to understand the topic. There is a surface understanding of the definition, a more difficult understanding of the mathematics, and an even more difficult understanding of the conceptual applications. In the case of bootstrap, I think I will find challenging understanding the math behind how bootstrap works.
@@ -343,12 +334,12 @@ validate(g, B = 300)
 Training here is defined as the accuracy when evaluated on the bootstrap sample and test is when the model is applied to the original sample. Our $D_{xy}$ is 0.5632 which is the difference between the probability of concordance and the probability of discordance of pairs of predicted survival times and pairs of observed survival times. This is essentially a measure of our accuracy of our model on new data.
 
 ## Validating the SE and the Coefficients via Bootstrap
-One idea of validating the standard error and the beta coefficients that we obtained in our original coxph model is to compute our bootstrap standard errors and beta coefficients and view their distributions. In the case of standard errors, if the bootstrap standard errors are close to the original standard errors, then we feel good about the variability of our original estimate. Similarly, if the boostrapped sampling distribution of our betas seems "normal" around our original beta coefficient, then we feel good about our estimate because we can invoke some normal theory and be comfortable about the robustness of our estimated coefficients.
+One idea of validating the standard error and the beta coefficients that we obtained in our original coxph model is to compute our bootstrap standard errors and beta coefficients and view their distributions. In the case of standard errors, if the bootstrap standard errors are close to the original standard errors, then we feel good about the variability of our original estimate. Similarly, if the boostrapped sampling distribution of our betas seems "normal" around our original beta coefficient, then we feel good about our estimate because we are comfortable that our estimated coefficients were close to the bootstrapped average over many new samples. 
 
 A little note about the boostrap methodology we used: it was a fairly straightforward sample with replacement without *fixing* the proportion of censored data. In other words, in each bootstrap sample, it could vary from 700 censored events to say, 710 censored events. Future exploratory directions could include trying other bootstrap sampling methods, such as separately bootstrapping censored and event data. 
 
-Let's first compare the standard errors between our bootstrap coefficients and our likelihood coefficients from our coxph model. 
-```{r}
+We first compare the standard errors between our bootstrap coefficients and our likelihood coefficients from our coxph model. 
+```{r, echo=FALSE}
 #initialize parameters
 B <- 300
 n <- nrow(data)
@@ -368,12 +359,15 @@ bootavgse <- colMeans(bootse, 1)
 #compare bootstrap standard errors and original standard errors
 likese <- fit4 %>% tidy() %>% pull(3)
 comparison <- tibble(likese, bootavgse, coef = c("tx1", "karnof80", "karnof90", "karnof100", "cd4"))
+```
+
+```{r}
 comparison
 ```
 
-We see that the standard errors are pretty similar! Here is a boxplot to visualize how the distribution of bootstrapped standard errors compare to our original standard error estimates. 
+We see that the standard errors are pretty similar! We also provide a boxplot to visualize how the distribution of bootstrapped standard errors compare to our original standard error estimates. 
 
-```{r}
+```{r, echo=FALSE}
 #add sd of bootstrap
 bootsd <- apply(bootse, 2, sd)
 bootse2 <- rbind(bootse, bootsd)
@@ -407,12 +401,13 @@ ggplot(bootse_tb_tidy, aes(x = beta, y = `tx1:cd4`)) +
   geom_point(data = subset(bootse_tb_tidy, highlight2), #mark original coxph SE
              aes(x = beta, y = `tx1:cd4`),
              color = "dodgerblue") + 
-  labs(y = "SE")
+  labs(y = "SE") + 
+  ggtitle("Figure 8. Distribution of Bootstrapped SE", subtitle = "Original SE (blue). Standard deviation of bootstrapped SE (red).")
 ```
 
-Let's now explore how the bootstrap betas vary compared to our original betas.
+Furthe, we explore how the bootstrap betas vary compared to our original betas.
 
-```{r}
+```{r, echo = FALSE}
 #initialize matrix
 bootbeta <- matrix(NA, nrow = 1, ncol = 5)
 #bootstrap model and obtain betas
@@ -426,9 +421,6 @@ for(i in 1:B) {
 bootbeta <- bootbeta[-1,]
 #convert into tibble
 bootbeta_tb <- as_tibble(bootbeta)
-#calculate sd for bootstrapped betas
-bootbeta_sd <- apply(bootbeta_tb, 2, sd)
-bootbeta_sd <- as.vector(bootbeta_sd)
 #tidy up data
 colnames(bootbeta_tb) <- c("tx1", "karnof80", "karnof90", "karnof100", "cd4")
 bootbeta_tb_tidy <- bootbeta_tb %>%
@@ -438,45 +430,52 @@ bootbeta_tb_tidy <- bootbeta_tb %>%
 p1 <- ggplot(bootbeta_tb, aes(tx1)) + 
   geom_density() +
   geom_vline(xintercept = as.vector(final.fit$coefficients)[1]) + 
-  geom_vline(xintercept = c(as.vector(final.fit$coefficients)[1] - bootbeta_sd[1],
-                            as.vector(final.fit$coefficients)[1] + bootbeta_sd[1]), linetype = "dotted")
+  geom_vline(xintercept = c(as.vector(final.fit$coefficients)[1] - 1.96*0.2576,
+                            as.vector(final.fit$coefficients)[1] + 1.96*0.2576), linetype = "dotted") + geom_vline(xintercept = c(sort(bootbeta[,1])[7],
+                            sort(bootbeta[,1])[293]), color = "red")
+
 p2 <- ggplot(bootbeta_tb, aes(karnof80)) + 
   geom_density() + 
   geom_vline(xintercept = as.vector(final.fit$coefficients)[2]) + 
-  geom_vline(xintercept = c(as.vector(final.fit$coefficients)[2] - bootbeta_sd[2],
-                            as.vector(final.fit$coefficients)[2] + bootbeta_sd[2]), linetype = "dotted")
+  geom_vline(xintercept = c(as.vector(final.fit$coefficients)[2] - 1.96*0.4122,
+                            as.vector(final.fit$coefficients)[2] + 1.96*0.4122), linetype = "dotted") + geom_vline(xintercept = c(sort(bootbeta[,2])[7],
+                            sort(bootbeta[,2])[293]), color = "red")
+
 p3 <- ggplot(bootbeta_tb, aes(karnof90)) + 
   geom_density() + 
   geom_vline(xintercept = as.vector(final.fit$coefficients)[3]) + 
-  geom_vline(xintercept = c(as.vector(final.fit$coefficients)[3] - bootbeta_sd[3],
-                            as.vector(final.fit$coefficients)[3] + bootbeta_sd[3]), linetype = "dotted")
+  geom_vline(xintercept = c(as.vector(final.fit$coefficients)[3] - 1.96*0.4125,
+                            as.vector(final.fit$coefficients)[3] + 1.96*0.4125), linetype = "dotted") + geom_vline(xintercept = c(sort(bootbeta[,3])[7],
+                            sort(bootbeta[,3])[293]), color = "red")
+
 p4 <- ggplot(bootbeta_tb, aes(karnof100)) + 
   geom_density() +
   geom_vline(xintercept = as.vector(final.fit$coefficients)[4]) + 
-  geom_vline(xintercept = c(as.vector(final.fit$coefficients)[4] - bootbeta_sd[4],
-                            as.vector(final.fit$coefficients)[4] + bootbeta_sd[4]), linetype = "dotted")
+  geom_vline(xintercept = c(as.vector(final.fit$coefficients)[4] - 1.96*0.4648,
+                            as.vector(final.fit$coefficients)[4] + 1.96*0.4648), linetype = "dotted") + geom_vline(xintercept = c(sort(bootbeta[,4])[7],
+                            sort(bootbeta[,4])[293]), color = "red")
+
 p5 <- ggplot(bootbeta_tb, aes(cd4)) + 
   geom_density() +
   geom_vline(xintercept = as.vector(final.fit$coefficients)[5]) + 
-  geom_vline(xintercept = c(as.vector(final.fit$coefficients)[5] - bootbeta_sd[5],
-                            as.vector(final.fit$coefficients)[5] + bootbeta_sd[5]), linetype = "dotted")
+  geom_vline(xintercept = c(as.vector(final.fit$coefficients)[5] - 1.96*0.0031,
+                            as.vector(final.fit$coefficients)[5] + 1.96*0.0031), linetype = "dotted") + geom_vline(xintercept = c(sort(bootbeta[,5])[7],
+                            sort(bootbeta[,5])[293]), color = "red")
+
 ggarrange(p1, p2, p3, p4, p5, 
           ncol = 2, 
-          nrow = 3)
+          nrow = 3) %>%
+  annotate_figure(top = text_grob("Figure 9. Bootstrap Sampling Distribution Beta Coefficients"))
 ```
 
-As we can see the sampling distribution of the bootstrapped betas fall more or less "normally" around the original estimate (shown by the solid black line). Standard deviation is marked by the dotted lines. Thus, I feel comfortable about the original estimates of the coefficients in that they weren't estimates at the tail end of a theoretical sampling distribution. 
+As we can see, the sampling distribution of the bootstrapped betas fall more or less "normally" around the original estimate (shown by the solid black line). The 95% confidence intervals of the original estimates are displayed by dotted lines whereas the 95% confidence intervals of the bootstrap distributions are displayed by solid red lines. The confidence intervals are fairly similar, with `karnof80` and `karnof90` being slightly right skewed. Thus, I feel comfortable about the original estimates of the coefficients in that they weren't estimates at the tail end of a theoretical sampling distribution approximating a "true" distribution. 
 
-## Resources
-\begin{itemize}
-\item https://statisticalhorizons.com/multicollinearity (Great article on multicollinearity)
-\item Harrell, F. (2015) Regression Modeling Strategies. (great textbook on all things survival analysis)
-\item https://www.datacamp.com/community/tutorials/bootstrap-r (Overview of bootstrapping)
-\item https://stats.stackexchange.com/questions/22017/sample-size-and-cross-validation-methods-for-cox-regression-predictive-models
-\item https://stats.stackexchange.com/questions/18084/collinearity-between-categorical-variables (Explanation of VIF for Categorical Variables)
-\end{itemize}
+## Interpreting our final model
+The final model obtained after selecting features via LASSO was $$ln(\frac{h_i(t)}{h_0(t)}) = \beta_1tx1 + \gamma_1karnof80 + \gamma_2karnof90 + \gamma_3karnof100 + \theta_1 cd4$$
 
 # Gradient Boosted Trees (Madison)
+
+In addition to running a CoxPH model, we decided to try running a Cox Proportional Hazards model via a gradient boosted tree. 
 
 ## Background
 
@@ -484,7 +483,7 @@ Gradient boosting machines have gained traction in recent years, popular among K
 
 Gradient boosting is a supervised ensemble method which agglomerates simple, "weak" learners into a more complex whole. In boosting (also called additive training), we start with a constant prediction and iteratively add new functions on top, fixing what we have learned and adding one new model at a time will holding onto functions learned in previous rounds. We fit each model to new residuals based on the previous prediction, then minimize the loss with the addition of the latest prediction. Thus, the residuals from each previous round are used to train the model. In doing this, we are actually updating our model each time using gradient descent - hence the name "gradient" boosting! Gradient boosting is possible with almost any simple classifier, but XGBoost in particular uses an ensemble of decision trees. The objective function within XGBoost also incorporates a regularization term.
 
-By default, XGBoost in Python has mean squared error as its loss funciton within its objective function. However, the creators of XGBoost recently added the option to instead use the Cox regression loss function for right-censored survival time data, and that is what I will be doing. Predictions are then returned on the hazard ratio scale. The package also includes the negative partial log-likelihood for Cox proportional hazards regression as an evaluation metric. 
+By default, XGBoost in Python has mean squared error as its loss funciton within its objective function. However, the creators of XGBoost recently added the option to instead use the Cox regression loss function for right-censored survival time data, and that is what I will be using. Predictions are then returned on the hazard ratio scale. The package also includes the negative partial log-likelihood for Cox proportional hazards regression as an evaluation metric. 
 
 After I have a good model, I'll produce visualizations of feature importance using SHAP values. I saw these in passing during my internship at Civis last summer, but never got to work with them directly and haven't yet taken the time to fully understand them. 
 
@@ -492,19 +491,35 @@ I will be using the Python `xgboost` package to give myself the added challenge 
 
 My hope is that, in building model for this AIDs survival analysis task, I will come to better understand Gradient Boosting, SHAP values, and survival analysis itself.
 
-## Challenges
+## Cox Proportional Hazards in Generalized Boosted Models
 
-I have yet to fully understand what SHAP values are and how to interpret them - will have to read up on that! I'd also like to better understand all the math going on under the surface when using Cox PH within XGBoost. 
+In 2018, Tianqi Chen and other contributors added survival analysis cabability to XGBoost. They use gradient boosting with "the loss function from penalized Cox partial likelihood..., where regularization is explicitly imposed through penalization" ("Boosted nonparametric hazards with time-dependent covariates", Lee et al.). This approach is nearly identical to the `CoxBoost` algorithm Binder and Schumacher developed and detail in their paper, "Allowing for mandatory covariates in boosting estimation of sparse high-dimensional survival models" (2008). Since the paper associated with XGBoost was published before their survival analysis add-on, I relied on Binder and Schumacher's publication to give the best explanation of the Cox algorithm underying XGBoost. Their work is summarized below.
 
-## Resources
+To facilitate the understanding of notation downstream, recall the Cox proportional hazards model. For observations $(t_i, \delta_i, x_i), i = 1, \dots, n$ where $t_i$ is the observed time to event for individual $i$ and $\delta_i$ is 1 if an event occurred at time $t_i$ and 0 if the observation has been censored, and $x_i = (x_{i1}, \dots, x_{ip})$ is a vector of covariates obtained at time $0$. Then the hazard function is $h(t|x_i) = h_0(t)\exp(F(x_i; \beta))$ where $h_0(t)$ is the unspecified baseline hazard and $F(x;\beta)$ is a function of the covariates dependent on a parameter vector $\beta$. We like to use a linear predictor of the form $F(x;\beta)$ where each element of the $\beta$ vector describes the influence of a single covariate. We can obtain an estimate for $\beta$ by maximizing the partial log-likelihood:
+
+$$l(\beta) = \sum_{i=1}^{n} \delta_i (F(x_i; \beta) - \log (\sum_{j:t_j \geq t_i} \exp (F(x; \beta)))$$
+
+The goal of `CoxBoost` is to estimate the parameter vector $\beta$ for a linear predictor $F(x;\beta)$ in the Cox proportional hazards model.
+
+They were inspired by the existing Generalized Boosted Models R package `gbm` (Greenwell et al.) which has included the Cox proportional hazard model since 2007. In "Generalized Boosted Models: A guide to the gbm package," Greg Ridgeway details how the developers implementated the Cox proportional hazard model. According to Ridgeway, "The Cox proportional hazard model... is an incredibly useful model and the boosting framework applies quite readily with only slight modification" (Ridgeway 1). Chen et al detail the mathematics earlier in the context of gradient-boosting trees
+
+The goal of any GBM (gradient boosting machine) is to learn a functional mapping from the data $\{x_i, y_i\}_{i=1}^{n}$ to $y = F(x, \beta)$ where $\beta$ is the set of parameters of the function $F$ which minimize some cost function $\sum_{i=i}^{n} \Phi(y_i, F(x_i; \beta))$. An important assumption of boosting is that $F(x) = \sum_{m=0}^{M} \rho_m f(x; \tau_m)$ where $f$ is a "weak" learner with a weight $\rho$ and set parameter $\tau_m$ (described just below). In other words, this assumption means that $F(x)$ follows an "additive" expansion form, permitting us to perform "additive training" or boosting. Thus, the set of parameters of the function $F$ is exactly $\beta = \{\rho_m, \tau_m\}_{m=1}^{M}.$ These are learned in a greedy iterative process, detailed below:
+
+To boost a proportional hazards model, the cost function becomes the negative partial log-likelihood (Chen et al.):
+
+$\phi(y, F) = -\sum_{i=1}^{n} \delta_i (F(x_i) - \log (\sum_{j:t_j \geq t_i} e^{F(x_j)}))$
+
+# Discussion and Concluding Remarks
+
+# References
 \begin{itemize}
 \item https://homes.cs.washington.edu/~tqchen/pdf/BoostedTree.pdf
 \item https://xgboost.readthedocs.io/en/latest/tutorials/model.html
 \item https://slundberg.github.io/shap/notebooks/NHANES%20I%20Survival%20Model.html
+\item https://statisticalhorizons.com/multicollinearity (Great article on multicollinearity)
+\item Harrell, F. (2015) Regression Modeling Strategies. (great textbook on all things survival analysis)
+\item https://www.datacamp.com/community/tutorials/bootstrap-r (Overview of bootstrapping)
+\item https://stats.stackexchange.com/questions/22017/sample-size-and-cross-validation-methods-for-cox-regression-predictive-models
+\item https://stats.stackexchange.com/questions/18084/collinearity-between-categorical-variables (Explanation of VIF for Categorical Variables)
 \end{itemize}
 
-# Things left to do 
-\begin{enumerate}
-\item Interpret model
-\item Train XGBoost and compare standard Cox model with XGBoost model.
-\end{enumerate}
