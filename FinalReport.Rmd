@@ -405,7 +405,7 @@ ggplot(bootse_tb_tidy, aes(x = beta, y = `tx1:cd4`)) +
   ggtitle("Figure 8. Distribution of Bootstrapped SE", subtitle = "Original SE (blue). Standard deviation of bootstrapped SE (red).")
 ```
 
-Furthe, we explore how the bootstrap betas vary compared to our original betas.
+Further, we explore how the bootstrap betas vary compared to our original betas.
 
 ```{r, echo = FALSE}
 #initialize matrix
@@ -471,7 +471,28 @@ ggarrange(p1, p2, p3, p4, p5,
 As we can see, the sampling distribution of the bootstrapped betas fall more or less "normally" around the original estimate (shown by the solid black line). The 95% confidence intervals of the original estimates are displayed by dotted lines whereas the 95% confidence intervals of the bootstrap distributions are displayed by solid red lines. The confidence intervals are fairly similar, with `karnof80` and `karnof90` being slightly right skewed. Thus, I feel comfortable about the original estimates of the coefficients in that they weren't estimates at the tail end of a theoretical sampling distribution approximating a "true" distribution. 
 
 ## Interpreting our final model
-The final model obtained after selecting features via LASSO was $$ln(\frac{h_i(t)}{h_0(t)}) = \beta_1tx1 + \gamma_1karnof80 + \gamma_2karnof90 + \gamma_3karnof100 + \theta_1 cd4$$
+The final model obtained after selecting features via LASSO was $$ln(\frac{h_i(t)}{h_0(t)}) = \beta_1tx1 + \gamma_1karnof80 + \gamma_2karnof90 + \gamma_3karnof100 + \theta_1 cd4$$. To better understand the effects of each predictor, we provide the following graphics. 
+
+```{r, echo=FALSE}
+ddist <- datadist(data)
+options(datadist = 'ddist')
+
+#plot effect of each predictor on log survival time
+ggplot(Predict(final.fit, ref.zero = T),
+       vnames = 'names',
+       sepdiscrete = 'vertical') +
+  ggtitle("Figure 10. The Effects of Each Predictor on Log Survival Time")
+```
+
+This plot shows the effect of each predictor on log survival time. Predicted values have been centered. 95% confidence intervals are also shown for the continuous variables. We observe that as cd4 count increases, the log of the relative hazard decreases. As Karnofsky score decreases, the log of the relative hazard goes up, which is to be expected. It seems that the treatment group including IDV is associated with a lower log relative hazard. 
+
+```{r, echo=FALSE}
+#plot estimated change in median survival time for each predictor
+options(digit = 3)
+plot(summary(final.fit), log = TRUE, main = "Figure 11. The Estimated Change in Median Survival Time for Each Predictor")
+```
+
+This above plot portrays the estimated change in median survival time for each predictor. Different shaded areas of bar indicate different confidence levels (.9, 0.95, 0.99). We see that as the cd4 count goes from 22.25 to 135.75, the median survival time decreases by more than half. Or when the Karnofsky score goes from 70 to 90, we observe a three-fold increase in median survival time.
 
 # Gradient Boosted Trees (Madison)
 
@@ -510,6 +531,9 @@ To boost a proportional hazards model, the cost function becomes the negative pa
 $\phi(y, F) = -\sum_{i=1}^{n} \delta_i (F(x_i) - \log (\sum_{j:t_j \geq t_i} e^{F(x_j)}))$
 
 # Discussion and Concluding Remarks
+Overall, our model points to treatment, Karnofsky score, and cd4 levels as important predictors for predicting time to death (or diagnosis). As seen in Figure 10, an increase in cd4 is associated with a statistically significant decrease in the log hazard ratio, which is sensible since cd4 cell count is a well-regarded indicator for the presence of HIV -- the lower the cd4 count, the higher the activity of the HIV virus killing off these cells. As seen in Figure 11, when the Karnofsky score goes from 70 to 90, we observe a signficant three-fold increase in median survival time. This result may even serve to help validate the Karnofsky performance metric intrinsically. In addition, Figure 5, our model fit, Figures 10 and 11 all show that there is a significant difference between the control and treatment groups regarding survival, with the treatment group having a higher survival. 
+
+Thus, given that this was an experimental study, we conclude that the treatment containing IDV significantly increases survival after adjusting for cd4 levels and Karnofsky score. We are willing to generalize this claim to patients who have no more than 200 CD4 cells/cubic millimeters, at least 3 months of prior ZDV therapy, and who reside in the United States since those were the inclusion criteria for this study. 
 
 # References
 \begin{itemize}
