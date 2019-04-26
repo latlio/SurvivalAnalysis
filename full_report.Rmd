@@ -517,13 +517,39 @@ Gradient boosting machines have gained traction in recent years, popular among K
 
 Gradient boosting is a supervised ensemble method which agglomerates simple, "weak" learners into a more complex whole. In boosting (also called additive training), we start with a constant prediction and iteratively add new functions on top, fixing what we have learned and adding one new model at a time will holding onto functions learned in previous rounds. We fit each model to new residuals based on the previous prediction, then minimize the loss with the addition of the latest prediction. Thus, the residuals from each previous round are used to train the model. In doing this, we are actually updating our model each time using gradient descent - hence the name "gradient" boosting! Gradient boosting is possible with almost any simple classifier, but XGBoost in particular uses an ensemble of decision trees. The objective function within XGBoost also incorporates a regularization term.
 
-By default, XGBoost in Python has mean squared error as its loss funciton within its objective function. However, the creators of XGBoost recently added the option to instead use the Cox regression loss function for right-censored survival time data, and that is what I will be doing. Predictions are then returned on the hazard ratio scale. The package also includes the negative partial log-likelihood for Cox proportional hazards regression as an evaluation metric. 
+By default, XGBoost in Python has mean squared error as its loss funciton within its objective function. However, the creators of XGBoost recently added the option to instead use the Cox regression loss function for right-censored survival time data, and that is what I will be using. Predictions are then returned on the hazard ratio scale. The package also includes the negative partial log-likelihood for Cox proportional hazards regression as an evaluation metric. 
 
 After I have a good model, I'll produce visualizations of feature importance using SHAP values. I saw these in passing during my internship at Civis last summer, but never got to work with them directly and haven't yet taken the time to fully understand them. 
 
 I will be using the Python `xgboost` package to give myself the added challenge of incorporating both R and Python within one RMarkdown.
 
 My hope is that, in building model for this AIDs survival analysis task, I will come to better understand Gradient Boosting, SHAP values, and survival analysis itself.
+
+## Cox Proportional Hazards in Generalized Boosted Models
+
+In 2018, Tianqi Chen and other contributors added survival analysis cabability to XGBoost. They use gradient boosting with "the loss function from penalized Cox partial likelihood..., where regularization is explicitly imposed through penalization" ("Boosted nonparametric hazards with time-dependent covariates", Lee et al.). This approach is nearly identical to the `CoxBoost` algorithm Binder and Schumacher developed and detail in their paper, "Allowing for mandatory covariates in boosting estimation of sparse high-dimensional survival models" (2008). Since the paper associated with XGBoost was published before their survival analysis add-on, I relied on Binder and Schumacher's publication to give the best explanation of the Cox algorithm underying XGBoost. Their work is summarized below.
+
+To facilitate the understanding of notation downstream, recall the Cox proportional hazards model. For observations $(t_i, \delta_i, x_i), i = 1, \dots, n$ where $t_i$ is the observed time to event for individual $i$ and $\delta_i$ is 1 if an event occurred at time $t_i$ and 0 if the observation has been censored, and $x_i = (x_{i1}, \dots, x_{ip})$ is a vector of covariates obtained at time $0$. Then the hazard function is $h(t|x_i) = h_0(t)\exp(F(x_i; \beta))$ where $h_0(t)$ is the unspecified baseline hazard and $F(x;\beta)$ is a function of the covariates dependent on a parameter vector $\beta$. We like to use a linear predictor of the form $F(x;\beta)$ where each element of the $\beta$ vector describes the influence of a single covariate. We can obtain an estimate for $\beta$ by maximizing the partial log-likelihood:
+
+$$l(\beta) = \sum_{i=1}^{n} \delta_i (F(x_i; \beta) - \log (\sum_{j:t_j \geq t_i} \exp (F(x; \beta)))$$
+
+One way 
+
+The goal of `CoxBoost` is to estimate the parameter vector $\beta$ for a linear predictor $F(x;\beta)$ in the Cox proportional hazards model.
+
+They were inspired by the existing Generalized Boosted Models R package `gbm` (Greenwell et al.) which has included the Cox proportional hazard model since 2007. In "Generalized Boosted Models: A guide to the gbm package," Greg Ridgeway details how the developers implementated the Cox proportional hazard model. According to Ridgeway, "The Cox proportional hazard model... is an incredibly useful model and the boosting framework applies quite readily with only slight modification" (Ridgeway 1). Chen et al detail the mathematics earlier in the context of gradient-boosting trees
+
+The goal of any GBM (gradient boosting machine) is to learn a functional mapping from the data $\{x_i, y_i\}_{i=1}^{n}$ to $y = F(x, \beta)$ where $\beta$ is the set of parameters of the function $F$ which minimize some cost function $\sum_{i=i}^{n} \Phi(y_i, F(x_i; \beta))$. An important assumption of boosting is that $F(x) = \sum_{m=0}^{M} \rho_m f(x; \tau_m)$ where $f$ is a "weak" learner with a weight $\rho$ and set parameter $\tau_m$ (described just below). In other words, this assumption means that $F(x)$ follows an "additive" expansion form, permitting us to perform "additive training" or boosting. Thus, the set of parameters of the function $F$ is exactly $\beta = \{\rho_m, \tau_m\}_{m=1}^{M}.$ These are learned in a greedy iterative process, detailed below:
+
+\begin{enumerate}
+  \item 
+\end{enumerate}
+
+To boost a proportional hazards model, the cost function becomes the negative partial log-likelihood (Chen et al.):
+
+$\phi(y, F) = -\sum_{i=1}^{n} \delta_i (F(x_i) - \log (\sum_{j:t_j \geq t_i} e^{F(x_j)}))$
+
+###
 
 ## Challenges
 
