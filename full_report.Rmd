@@ -18,6 +18,7 @@ library(glmnet)
 library(broom)
 library(xtable)
 library(GGally)
+library(ggpubr)
 data <- read_csv("AIDSdata.csv")
 aids <- data
 
@@ -353,7 +354,12 @@ validate(g, B = 300)
 
 Training here is defined as the accuracy when evaluated on the bootstrap sample and test is when the model is applied to the original sample. Our $D_{xy}$ is 0.5632 which is the difference between the probability of concordance and the probability of discordance of pairs of predicted survival times and pairs of observed survival times. This is essentially a measure of our accuracy of our model on new data.
 
-Let's compare the standard errors between our bootstrap coefficients and our likelihood coefficients from our cox PH model. 
+## Validating the SE and the Coefficients via Bootstrap
+One idea of validating the standard error and the beta coefficients that we obtained in our original coxph model is to compute our bootstrap standard errors and beta coefficients and view their distributions. In the case of standard errors, if the bootstrap standard errors are close to the original standard errors, then we feel good about the variability of our original estimate. Similarly, if the boostrapped sampling distribution of our betas seems "normal" around our original beta coefficient, then we feel good about our estimate because we can invoke some normal theory and be comfortable about the robustness of our estimated coefficients.
+
+A little note about the boostrap methodology we used: it was a fairly straightforward sample with replacement without *fixing* the proportion of censored data. In other words, in each bootstrap sample, it could vary from 700 censored events to say, 710 censored events. Future exploratory directions could include trying other bootstrap sampling methods, such as separately bootstrapping censored and event data. 
+
+Let's first compare the standard errors between our bootstrap coefficients and our likelihood coefficients from our coxph model. 
 ```{r}
 #initialize parameters
 B <- 300
@@ -373,16 +379,126 @@ for(i in 1:B) {
 #remove first row
 bootse <- bootse[-1,]
 
-#compute avg standard errors -- NOT SURE ABOUT THIS STEP
+#compute avg standard errors
 bootavgse <- colMeans(bootse, 1)
+
+#compare bootstrap standard errors and original standard errors
+likese <- fit4 %>% tidy() %>% pull(3)
+comparison <- tibble(likese, bootavgse, coef = c("tx1", "karnof80", "karnof90", "karnof100", "cd4"))
+comparison
 ```
+
+We see that the standard errors are pretty similar! Here is a boxplot to visualize how the distribution of bootstrapped standard errors compare to our original standard error estimates. 
 
 ```{r}
-likese <- fit4 %>% tidy() %>% pull(3)
-tibble(likese, bootavgse, coef = c("tx1", "karnof80", "karnof90", "karnof100", "cd4"))
+#add sd of bootstrap
+bootsd <- apply(bootse, 2, sd)
+bootse2 <- rbind(bootse, bootsd)
+
+#add original coxph SE
+bootse3 <- rbind(bootse2, likese)
+
+#turn to tibble
+bootse_tb <- as_tibble(bootse3)
+
+#tidy up bootstrap SE for plotting
+colnames(bootse_tb) <- c("tx1", "karnof80", "karnof90", "karnof100", "cd4")
+bootse_tb_tidy <- bootse_tb %>%
+  gather(beta, value = tx1:cd4)
+
+#mark standard deviations of bootstrap
+bootse_tb_tidy <- bootse_tb_tidy %>%
+  mutate(highlight = ifelse(row.names(bootse_tb_tidy) == 301 | 
+                              row.names(bootse_tb_tidy) == 603 | 
+                              row.names(bootse_tb_tidy) == 905 | 
+                              row.names(bootse_tb_tidy) == 1207 |
+                              row.names(bootse_tb_tidy) == 1509, TRUE, FALSE))
+#mark original coxph SE
+bootse_tb_tidy <- bootse_tb_tidy %>%
+  mutate(highlight2 = ifelse(row.names(bootse_tb_tidy) == 302 | 
+                              row.names(bootse_tb_tidy) == 604 | 
+                              row.names(bootse_tb_tidy) == 906 | 
+                              row.names(bootse_tb_tidy) == 1208 |
+                              row.names(bootse_tb_tidy) == 1510, TRUE, FALSE))
+
+ggplot(bootse_tb_tidy, aes(x = beta, y = `tx1:cd4`)) +
+  geom_boxplot() +
+  geom_point(data = subset(bootse_tb_tidy, highlight), #mark standard deviations in red
+             aes(x = beta, y = `tx1:cd4`),
+             color = "red") +
+  geom_point(data = subset(bootse_tb_tidy, highlight2), #mark original coxph SE
+             aes(x = beta, y = `tx1:cd4`),
+             color = "dodgerblue") + 
+  labs(y = "SE")
 ```
 
-They are pretty similar!
+Let's now explore how the bootstrap betas vary compared to our original betas.
+
+```{r}
+#initialize matrix
+bootbeta <- matrix(NA, nrow = 1, ncol = 5)
+
+#bootstrap model and obtain betas
+set.seed(47)
+for(i in 1:B) {
+  j <- sample(1:n, n, TRUE)
+  bootfit <- update(final.fit, data=data, subset=j)
+  bootbeta <- rbind(bootbeta, as.vector(bootfit$coefficients))
+}
+
+#remove first row
+bootbeta <- bootbeta[-1,]
+
+#convert into tibble
+bootbeta_tb <- as_tibble(bootbeta)
+
+#calculate sd for bootstrapped betas
+bootbeta_sd <- apply(bootbeta_tb, 2, sd)
+bootbeta_sd <- as.vector(bootbeta_sd)
+
+#tidy up data
+colnames(bootbeta_tb) <- c("tx1", "karnof80", "karnof90", "karnof100", "cd4")
+bootbeta_tb_tidy <- bootbeta_tb %>%
+  gather(beta, value = tx1:cd4) %>%
+  mutate(value = `tx1:cd4`)
+
+#view densities of the each of the betas
+p1 <- ggplot(bootbeta_tb, aes(tx1)) + 
+  geom_density() +
+  geom_vline(xintercept = as.vector(final.fit$coefficients)[1]) + 
+  geom_vline(xintercept = c(as.vector(final.fit$coefficients)[1] - bootbeta_sd[1],
+                            as.vector(final.fit$coefficients)[1] + bootbeta_sd[1]), linetype = "dotted")
+
+p2 <- ggplot(bootbeta_tb, aes(karnof80)) + 
+  geom_density() + 
+  geom_vline(xintercept = as.vector(final.fit$coefficients)[2]) + 
+  geom_vline(xintercept = c(as.vector(final.fit$coefficients)[2] - bootbeta_sd[2],
+                            as.vector(final.fit$coefficients)[2] + bootbeta_sd[2]), linetype = "dotted")
+
+p3 <- ggplot(bootbeta_tb, aes(karnof90)) + 
+  geom_density() + 
+  geom_vline(xintercept = as.vector(final.fit$coefficients)[3]) + 
+  geom_vline(xintercept = c(as.vector(final.fit$coefficients)[3] - bootbeta_sd[3],
+                            as.vector(final.fit$coefficients)[3] + bootbeta_sd[3]), linetype = "dotted")
+
+p4 <- ggplot(bootbeta_tb, aes(karnof100)) + 
+  geom_density() +
+  geom_vline(xintercept = as.vector(final.fit$coefficients)[4]) + 
+  geom_vline(xintercept = c(as.vector(final.fit$coefficients)[4] - bootbeta_sd[4],
+                            as.vector(final.fit$coefficients)[4] + bootbeta_sd[4]), linetype = "dotted")
+
+p5 <- ggplot(bootbeta_tb, aes(cd4)) + 
+  geom_density() +
+  geom_vline(xintercept = as.vector(final.fit$coefficients)[5]) + 
+  geom_vline(xintercept = c(as.vector(final.fit$coefficients)[5] - bootbeta_sd[5],
+                            as.vector(final.fit$coefficients)[5] + bootbeta_sd[5]), linetype = "dotted")
+
+ggarrange(p1, p2, p3, p4, p5, 
+          ncol = 2, 
+          nrow = 3)
+```
+
+As we can see the sampling distribution of the bootstrapped betas fall more or less "normally" around the original estimate (shown by the solid black line). Standard deviation is marked by the dotted lines. Thus, I feel comfortable about the original estimates of the coefficients in that they weren't estimates at the tail end of a theoretical sampling distribution. 
 
 ## Resources
 \begin{itemize}
@@ -390,6 +506,7 @@ They are pretty similar!
 \item Harrell, F. (2015) Regression Modeling Strategies. (great textbook on all things survival analysis)
 \item https://www.datacamp.com/community/tutorials/bootstrap-r (Overview of bootstrapping)
 \item https://stats.stackexchange.com/questions/22017/sample-size-and-cross-validation-methods-for-cox-regression-predictive-models
+\item https://stats.stackexchange.com/questions/18084/collinearity-between-categorical-variables (Explanation of VIF for Categorical Variables)
 \end{itemize}
 
 # Gradient Boosted Trees (Madison)
