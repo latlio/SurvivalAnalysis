@@ -480,9 +480,9 @@ options(datadist = 'ddist')
 #plot effect of each predictor on log survival time
 ggplot(Predict(final.fit, ref.zero = T),
        vnames = 'names',
-       sepdiscrete = 'vertical') +
-  ggtitle("Figure 10. The Effects of Each Predictor on Log Survival Time")
+       sepdiscrete = 'vertical')
 ```
+Figure 10. The Effects of Each Predictor on Log Survival Time
 
 This plot shows the effect of each predictor on log survival time. Predicted values have been centered. 95% confidence intervals are also shown for the continuous variables. We observe that as cd4 count increases, the log of the relative hazard decreases. As Karnofsky score decreases, the log of the relative hazard goes up, which is to be expected. It seems that the treatment group including IDV is associated with a lower log relative hazard. 
 
