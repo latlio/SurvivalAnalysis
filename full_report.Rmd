@@ -527,7 +527,9 @@ My hope is that, in building model for this AIDs survival analysis task, I will 
 
 ## Cox Proportional Hazards in Generalized Boosted Models
 
-In 2018, Tianqi Chen and other contributors added survival analysis cabability to XGBoost. They use gradient boosting with "the loss function from penalized Cox partial likelihood..., where regularization is explicitly imposed through penalization" ("Boosted nonparametric hazards with time-dependent covariates", Lee et al.). This approach is nearly identical to the `CoxBoost` algorithm Binder and Schumacher developed and detail in their paper, "Allowing for mandatory covariates in boosting estimation of sparse high-dimensional survival models" (2008). Since the paper associated with XGBoost was published before their survival analysis add-on, I relied on Binder and Schumacher's publication to give the best explanation of the Cox algorithm underying XGBoost. Their work is summarized below.
+In 2018, Tianqi Chen and other contributors added survival analysis cabability to XGBoost. Although the change is so recent that it is not yet in the XGBoost package, it exists on the github repo's master branch for public use. 
+
+They use gradient boosting with "the loss function from penalized Cox partial likelihood..., where regularization is explicitly imposed through penalization" ("Boosted nonparametric hazards with time-dependent covariates", Lee et al.). This approach is nearly identical to the `CoxBoost` algorithm Binder and Schumacher developed and detail in their paper, "Allowing for mandatory covariates in boosting estimation of sparse high-dimensional survival models" (2008). Since the paper associated with XGBoost was published before their survival analysis add-on, I relied on Binder and Schumacher's publication to give the best explanation of the Cox algorithm underying XGBoost. Their work is summarized below.
 
 To facilitate the understanding of notation downstream, recall the Cox proportional hazards model. For observations $(t_i, \delta_i, x_i), i = 1, \dots, n$ where $t_i$ is the observed time to event for individual $i$ and $\delta_i$ is 1 if an event occurred at time $t_i$ and 0 if the observation has been censored, and $x_i = (x_{i1}, \dots, x_{ip})$ is a vector of covariates obtained at time $0$. Then the hazard function is $h(t|x_i) = h_0(t)\exp(F(x_i; \beta))$ where $h_0(t)$ is the unspecified baseline hazard and $F(x;\beta)$ is a function of the covariates dependent on a parameter vector $\beta$. We like to use a linear predictor of the form $F(x;\beta)$ where each element of the $\beta$ vector describes the influence of a single covariate. We can obtain an estimate for $\beta$ by maximizing the partial log-likelihood:
 
@@ -549,11 +551,10 @@ To boost a proportional hazards model, the cost function becomes the negative pa
 
 $\phi(y, F) = -\sum_{i=1}^{n} \delta_i (F(x_i) - \log (\sum_{j:t_j \geq t_i} e^{F(x_j)}))$
 
-###
 
-## Challenges
+## Analysis
 
-I have yet to fully understand what SHAP values are and how to interpret them - will have to read up on that! I'd also like to better understand all the math going on under the surface when using Cox PH within XGBoost. 
+See the XGBoost jupyter notebook for the analysis (can't incorporate into R yet).
 
 ## Resources
 \begin{itemize}
@@ -562,8 +563,3 @@ I have yet to fully understand what SHAP values are and how to interpret them - 
 \item https://slundberg.github.io/shap/notebooks/NHANES%20I%20Survival%20Model.html
 \end{itemize}
 
-# Things left to do 
-\begin{enumerate}
-\item Interpret model
-\item Train XGBoost and compare standard Cox model with XGBoost model.
-\end{enumerate}
