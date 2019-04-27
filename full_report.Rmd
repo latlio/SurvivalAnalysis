@@ -1,8 +1,8 @@
 ---
-title: "Cox PH Model and Something New"
+title: "A Bootstrap Validated Parsimonious Cox PH Regression Model Predicting AIDS Survival"
 author: "Madison Hobbs & Lathan Liou"
 class: "MATH150: Methods in Biostatistics"
-date: "4/19/2019"
+date: "May 1, 2019"
 output: pdf_document
 editor_options: 
   chunk_output_type: console
@@ -21,7 +21,6 @@ library(GGally)
 library(ggpubr)
 data <- read_csv("AIDSdata.csv")
 aids <- data
-
 #parse as factor
 data <- data %>%
   mutate(tx = as.factor(tx),
@@ -36,23 +35,26 @@ data <- data %>%
 ```
 
 # Introduction
+The AIDS epidemic exploded in the early 80s, and the scientific community raced to find curative treatments. One such research group, Hammer et. al., sought to perform a study using a double-blind placebo controlled trial to compare the three-drug regimen of indinavir (IDV), zidovudine (ZDV) or stavudine (d4T) and lamivudine (3TC) with the two-drug regimen of ZDV or d4T and 3TC in HIV-infected patients. Specifically, they were interested in testing the effects of IDV, or as it's more commonly known, Crixivan. The discoverer of Crixivan, Paul Reider (who lectured at Pomona last year as a Robbins Chemistry Fellow!), had high hopes for this drug given its unique 3-D binding capacity to inhibit specific proteins in HIV. 
 
-Our project seeks to understand time of survival until an AIDS defining event or death. We first seek to understand the distributions of our time-to-event variables and the remaining explanatory variables through some exploratory data analysis. Next, we try a series of Cox Proportional Hazards models. Finally, we investigate extentions including Bootstrapping techniques and alternative model algorithms such as XGBoost.
+Having obtained the data from the study, our project seeks to understand the factors associated with time of survival until an AIDS defining event or death. We first seek to understand the distributions of our time-to-event variables and the other explanatory variables through an exploratory data analysis. Next, we aim to identify the most important predictors by using a Cox Proportional Hazards model and an XGBoost model. Lastly, we seek to validate our model by a bootstrap analysis. We also have hidden most of our code in this report for readability purposes; however, you can find our full code on our GitHub: https://github.com/latlio/SurvivalAnalysis.
+
+###Add Brief conclusions here ###
 
 # Exploratory Data Analysis
+Exploratory Data Analysis (EDA) is, and should be, the *first* step when working with data. Our primary objective is to visualize the distributions of our variables to gain a clearer understanding of how they vary. 
 
 ## A Note About Treatments
 
-According to the variable information table, we note that `txgrp` could have four levels (1: ZDV + 3TC, 2: ZDV + 3TC + IDV, 3: d4T + 3TC, and 4: d4T + 3TC + IDV). However, this dataset contains only two levels of `txgrp` (1: ZDV + 3TC, 2: ZDV + 3TC + IDV), as shown below:
+According to the variable information table, we note that `txgrp` could have four levels (1: ZDV + 3TC, 2: ZDV + 3TC + IDV, 3: d4T + 3TC, and 4: d4T + 3TC + IDV). However, this dataset contains only two levels of `txgrp` (1: ZDV + 3TC, 2: ZDV + 3TC + IDV). 
 
-```{r}
+```{r, echo=FALSE, results='hide'}
 aids %>% group_by(txgrp) %>% summarise(n())
 ```
 
-In fact, since the variable `tx` is supposed to indicate whether the treatment contained IDV, we might assume that `txgrp` and `tx` are redundant information in this dataset and that a 1 in `txgrp` is equivalent to a 0 in `tx` while a 2 in `txgrp` is equivalent to a 1 in `tx`. We confirm this hunch below. 
+In fact, since the variable `tx` is supposed to indicate whether the treatment contained IDV, we might assume that `txgrp` and `tx` are redundant information in this particular dataset and that a 1 in `txgrp` is equivalent to a 0 in `tx` while a 2 in `txgrp` is equivalent to a 1 in `tx`. We confirm this hunch below. 
 
 The following code says: create a new dataframe by taking all the rows in `data` where `txgrp` is 1 and `tx` is 0 *or* `txgrp` is 2 and `tx` is 1. Now, make sure that new dataframe is identical to the original data frame, and return `TRUE` if this is indeed the case. 
-
 
 ```{r}
 # Is it true that for every entry in `aids`
@@ -62,68 +64,59 @@ all(
   == aids) == TRUE
 ```
 
-## Correlation
+## Exploring Correlation
 
-We present a pairs plot of our explanatory variables, excluding id, our time-to-event variables, and our censoring variables to 1) visualize the distribution of the variables and 2) identify potential pair-wise correlation. \texttt{cd4} and \texttt{strat2} have a correlation coefficient of 0.74, which indicates moderate to strong correlation. This makes sense since \texttt{strat2} is the indicator variable for the continuous variable, \texttt{cd4}. Additionally, as noted just above, \texttt{tx} and \texttt{txgrp} provide the exact same information and therefore are perfectly correlated. Lastly, we would like to note that \texttt{sex}, \texttt{ivdrug}, and \texttt{hemophil} are highly unbalanced variables, meaning that one level of the variables is disproportionately represented relative to the other level(s).
+From an initial pair-wise correlation plot between our explanatory variables in our data (not shown here), we noticed that \texttt{cd4} and \texttt{strat2} have a correlation coefficient of 0.74, which indicates moderate to strong correlation. This made us realize that \texttt{strat2} is the indicator variable for the continuous variable, \texttt{cd4}. Additionally, we confirmed that \texttt{tx} and \texttt{txgrp} are identical because they were perfectly correlated. Lastly, we would like to note that \texttt{sex}, \texttt{ivdrug}, and \texttt{hemophil} are highly unbalanced variables, meaning that one level of the variables is disproportionately represented relative to the other level(s).
 
-```{r, fig.height=8, fig.width=13}
-aids %>% select(tx:age) %>% ggpairs()
-```
-
-## Censored vs. Non-Censored
+## A Note about Censored vs. Non-Censored
 
 It's worth noting that there are, in fact, two censored time-to-event variables. The primary variable of interest is `time` which is time in days to AIDs diagnosis or death, and this is informed by `censor`, which is 1 (true) if an individual was either diagnosed with AIDS *or* died during the course of the study and 0 otherwise. The other censored variable is `time_d` which is the time in days to death alone, governed by `censor_d` which is 1 if the person died during the study and 0 if not. 
 
 Since the primary variable of interest is time to AIDs diagnosis or death, we examine the complete (non-censored) individuals - those who were either diagnosed with AIDS *or* who died over the course of the study. The only caveat is that there are only 69 such individuals out of a study of 851 - most of the participants did not die or get diagnosed before the study's end. 
 
-```{r}
+```{r, echo=FALSE, results='hide'}
 non_censored <- aids %>% filter(censor == 1) %>% 
   mutate(tx=ifelse(tx == 0, "Control", "IDV"))
 dim(non_censored) # complete AIDS or death
 dim(aids)         # everyone
 ```
 
-Among those with complete times, we notice from the side-by-side histograms below that both the control and IDV groups are skewed right. This makes sense - for complete observations, it's probably less common for people to last a long time without being diagnosed or dying. The distributions between the control and IDV groups don't look that different however, especially given the tiny sample sizes.
+Among those with complete times, we notice from the side-by-side histograms below that both the control and IDV groups are skewed right. This makes sense - for complete observations, it's probably less common for people to last a long time without being diagnosed or dying. The distributions between the control and IDV groups don't look that different, however, especially given the tiny sample sizes.
 
-```{r}
+```{r, echo = FALSE}
 ggplot(non_censored, aes(x = time)) + 
   geom_histogram(bins = 30) + 
-  facet_grid(.~tx) + ggtitle("Complete Observations: Treatment vs. Time to Event") + 
+  facet_grid(.~tx) + ggtitle("Figure 1. Comparing the Distribution of Complete Time to Event Observations Between Control and Treatment") + 
+  theme(plot.title = element_text(size = 9)) +
   xlab("Time until AIDS Diagnosis or Death")
 ```
  
-When looking at the censored (incomplete) times for diagnosis/death, both control and IDV groups are in the opposite direction (left).
+When looking at the censored (incomplete) times for diagnosis/death, both control and IDV groups are skewed left in the opposite direction.
 
-```{r}
+```{r, echo = FALSE}
 ggplot(aids %>% 
          filter(censor == 0) %>% 
          mutate(tx=ifelse(tx == 0, "Control", "IDV")), aes(x = time_d)) + 
   geom_histogram(bins = 20) + 
   facet_grid(.~tx) + 
-  ggtitle("Incomplete Observations: Treatment vs. Time to Event") + 
+  ggtitle("Figure 2. Comparing the Distribution of Incomplete Time to Event Observations Between Control and Treatment") + 
+  theme(plot.title = element_text(size = 9)) +
   xlab("Time until End of Study")
 ```
 
 ## Prior ZDV on Complete Observations
 
-We were also curious about the relationship between time to diagnosis/death and number of months of prior ZDV use for non-censored participants. Interestingly, there appeared to be no relationship whatsoever, as evidenced by the following scatterplot:
+We were also curious about the relationship between time to diagnosis/death and number of months of prior ZDV use for non-censored participants, since ZDV is one of the drugs in both the treatment and control regimen. Interestingly, there appeared to be no relationship whatsoever, as evidenced by the following scatterplot:
 
-```{r}
+```{r, echo = FALSE}
 ggplot(non_censored, aes(x = time, y= priorzdv)) + 
   geom_point() + 
-  ggtitle("# Months Prior ZDV Treatment vs. Time to Death/Diagnosis")
+  ggtitle("Figure 3. Scatterplot of Number of Months of Prior ZDV Treatment vs. Time to Death/Diagnosis") +
+  theme(plot.title = element_text(size = 10))
 ```
 
-This finding is made even clearer when we log the number of months of prior zdv:
-
-```{r}
-ggplot(non_censored, aes(x = time, y= log(priorzdv))) + 
-  geom_point() + 
-  ggtitle("Log of # Months Prior ZDV Treatment vs. Time to Death/Diagnosis")
-```
-
-## Plotting Survival Curves
-```{r}
+### Plotting Survival Curves
+```{r, echo = FALSE}
 surv <- survfit(Surv(time, censor) ~ 1, 
                data = data, 
                type = "kaplan-meier", 
@@ -135,31 +128,41 @@ ggsurvplot(surv, data = data,
            conf.int = TRUE, 
            ggtheme = theme_minimal(), 
            risk.table.y.text.col = T, 
-           risk.table.y.text = F)
+           risk.table.y.text = F,
+           title = "Figure 4. Survival Curve of Time to Event Variable")
 ```
 
-We first fit a survival curve of just the time to death variable. We observe that the overall survival probability of our sample remains relatively high over time and that the last observation is censored. Because treatment is the clinical variable of interest, we next want to see how the survival curves differ between the two treatment groups.
+We also fit a survival curve of just the time to death variable. We observe that the overall survival probability of our sample remains relatively high over time and that the last observation is censored. Because treatment is the clinical variable of interest, we next want to see how the survival curves differ between the two treatment groups.
 
-```{r}
+```{r, echo = FALSE}
 surv2 <- survfit(Surv(time, censor) ~ tx, 
                data = data, 
                type = "kaplan-meier", 
                conf.typ ="log-log", 
                se.fit = TRUE)
-
 #plot KM curve
 ggsurvplot(surv2, data = data, 
            risk.table = TRUE, 
            conf.int = TRUE, 
            ggtheme = theme_minimal(), 
            risk.table.y.text.col = T, 
-           risk.table.y.text = F)
+           risk.table.y.text = F,
+           title = "Figure 5. Survival Curves Comparing Control to Treatment of Time to Event Variable")
+```
 
+```{r}
 #perform log-rank test
 survdiff(Surv(time, censor) ~ tx, data = data, rho = 1)
 ```
 
 We see that the treatment group for which IDV was also administered has a higher survival probability over time compared to the control group. Performing the log-rank test to test our null hypothesis of whether $S_0(t) = S_1(t)$ for all t results in a $\chi^2_1 = 9.2$ with a p-value of 0.002. We thus reject the null hypothesis and conclude that there is evidence that supports that the survival probabilities are significantly different between the treatment groups over some time intervals. 
+
+Overall, from our Exploratory Data Analysis, we have several key takeaways that will guide us in our modeling process:
+\begin{itemize}
+  \item We will use `tx` and not `txgrp` in our model since they are identical in this particular dataset
+  \item We will use `cd4` and not `strat2` in our model since `strat2` is the indicator variable for cd4. 
+  \item `Priorzdv` may not be an important predictor in our later models, e.g. our Cox PH model, whereas Treatment might be.
+\end{itemize}
 
 # Cox Proportional Hazards Model
 
@@ -167,11 +170,13 @@ We see that the treatment group for which IDV was also administered has a higher
 
 Our goal is to develop a multivariable survival model for time until death (or diagnosis). In particular, our objective is to build the best predictive model, i.e. we want the highest accuracy on new data. There are 69 deaths (or diagnoses) among 782 patients. The first thing we want to assess is a full additive model. Thus, categorical predictors were expanded using dummy variables. We chose not to include `txgrp` and `strat2` because they were derived (and thus highly correlated with) from other predictor variables. 
 
-First, we make sure that the technical condition for proportional hazards is met with the hypothesis test below. Since no p-values are significant at the $\alpha = 0.05$ level, we next build the full model.
+First, we make sure that the technical condition for proportional hazards is met with the hypothesis test below. 
 
 ```{r, warning=FALSE}
 cox.zph(coxph(Surv(time,censor) ~ tx + sex + raceth + ivdrug + hemophil + karnof + cd4 + priorzdv + age, data=data))
 ```
+
+Since no p-values are significant at the $\alpha = 0.05$ level, we conclude that there are no violations of the proportional hazards assumption, so we continue building our CoxPH model. We first build a full additive model. 
 
 ```{r, warning=FALSE}
 options(scipen = 999)
@@ -179,30 +184,16 @@ fit <- coxph(Surv(time, censor) ~ tx + sex + raceth + ivdrug + hemophil + karnof
 fit %>% tidy()
 ```
 
-We also checked whether any of the covariates were multicollinear with each other, and we see that none of them are multicollinear. 
-
-```{r}
-#check multicollinearity
-vif(fit)
-```
-
-We observe that none of the variables have a particularly high variance inflation factor (VIF). While `karnof80` and `karnof90` have relatively higher VIFs, we're not too concerned because they are dummy variables which necessarily have high VIFs due to the smaller proportion of cases in our reference category, `karnof70`. 
-
-The likelihood ratio $\chi^2$ statistic is 91.05 with 21 d.f. After considering whether variables can be mutating into new variables based on our conventional knowledge, and thinking of none in the moment, we decided to try shrinkage to reduce our dimensionality. Here, we're using a lasso penalty Cox PH regression model to select our most important features.
+The likelihood ratio $\chi^2$ statistic is 91.05 with 21 d.f of our full additive model. After considering whether variables can be mutating into new variables based on our conventional knowledge and finding none, we decided to try shrinkage to reduce our dimensionality. Here, we're using a lasso penalty Cox PH regression model to select our most important features. In brief, lasso essentially imposes an absolute value threshold penalty on each of the $\beta$ coefficients such that the variables that don't contribute much to explaining the response have their coefficients shrunk to zero. 
 
 ```{r}
 set.seed(47)
 #initialize covariate matrix
 x <- model.matrix(Surv(time, censor) ~ tx + sex + raceth + ivdrug + hemophil + karnof + cd4 + priorzdv + age, data)
-
 #cross validate lambda
 cv.fit <- cv.glmnet(x, Surv(data$time, data$censor), family = "cox", maxit = 1000)
 
-#plot cross-validated lambdas
-plot(cv.fit)
-
 lassofit <- glmnet(x, Surv(data$time, data$censor), family = "cox", maxit = 1000)
-
 #see which coefficients were kept
 active.coefs <- predict(lassofit, type = 'coefficients', s = cv.fit$lambda.min)
 ```
@@ -233,16 +224,14 @@ active.coefs <- predict(lassofit, type = 'coefficients', s = cv.fit$lambda.min)
 \end{tabular}
 \end{table}
 
-We see that the dummy variable for Hispanic and American Indian, the dummy variable for a Karnofsky score of 80 and priorzdv were shrunk to 0. If we rerun our Cox PH model without priorzdv, which from our EDA was found to not be highly correlated with time, and conduct a likelihood ratio test, let's see what happens.
+We see that the dummy variable for Hispanic and American Indian, the dummy variable for a Karnofsky score of 80 and priorzdv were shrunk to 0. If we rerun our Cox PH model without priorzdv, which from our EDA was found to not be highly correlated with time, and conduct a likelihood ratio test, we find that it's not needed in the model based on a result of a $\chi^2_1 = 0.2086$ and a p-value of 0.6479
 
 ```{r, warning=FALSE}
 fit2 <- coxph(Surv(time, censor) ~ tx + sex + raceth + ivdrug + hemophil + karnof + cd4 + age, data = data)
 anova(fit, fit2)
 ```
 
-Based on our likelihood ratio test results of a $\chi^2_1 = 0.2086$ and a p-value of 0.6479, priorzdv is not needed in the model. 
-
-We do think our model can be more parsimonious; however, so as to avoid overspecification, we look back at the Wald's p-values of the full additive model, and we see that treatment, karnof, cd4, and age (slightly above 0.05) are statistically significant. Before proceeding, we acknowledge that there is a fine line between trying not to overspecify our model and missing potential predictor variables that can contribute some explanatory power. Let's fit a model with only those 4 variables and conduct a likelihood ratio test between this model and the additive model without `priorzdv`.
+We do think our model can be more parsimonious; however, so as to avoid overspecification, we look back at the Wald's p-values of the full additive model, and we see that treatment, karnof, cd4, and age (slightly above 0.05) are statistically significant. Before proceeding, we acknowledge that there is a fine line between trying not to overspecify our model and missing potential predictor variables that can contribute some explanatory power. We fit a model with only those 4 variables and conduct a likelihood ratio test between this model and the additive model without `priorzdv`.
 
 ```{r}
 fit3 <- coxph(Surv(time, censor) ~ tx + karnof + cd4 + age, data = data)
@@ -251,7 +240,7 @@ anova(fit2, fit3)
 
 With a $\chi^2_8 = 6.72$ and a p-value of 0.5667, we conclude that none of the other variables in the additive model were needed. 
 
-Because age had a borderline p-value, let's try removing it from the model and seeing whether it's important or not.
+Because age had a borderline p-value, we tried removing it from the model and seeing whether it was important or not.
 
 ```{r, warning=FALSE}
 fit4 <- coxph(Surv(time, censor) ~ tx + karnof + cd4, data = data)
@@ -260,14 +249,14 @@ anova(fit3, fit4)
 
 It turns out, with a $\chi^2_1 = 2.23$ and a p-value of 0.1353, that age is not needed in the model.
 
-One nagging thought is that marginal variables might have *some* real predictive value even if it's slight. To that end, let's test whether interactions are significant or not. Specifically, because we have reason to believe that there my be interacting effects with treatment group (the clinical variable of interest), let's interact treatment with our categorical covariates along with adjusting for cd4, priorzdv, and age.
+One nagging thought is that marginal variables might have *some* real predictive value even if it's slight. To that end, let's test whether interactions are significant or not. Specifically, because we have reason to believe that there my be interacting effects with treatment group (the clinical variable of interest), we decided to interact treatment with our categorical covariates along with adjusting for cd4, priorzdv, and age.
 
 ```{r, warning=FALSE}
 fit.int <- coxph(Surv(time, censor) ~ tx*sex + tx*raceth + tx*ivdrug + tx*hemophil + tx*karnof + cd4 + priorzdv + age, data = data)
 anova(fit, fit.int)
 ```
 
-As we might suspect, none of the interaction terms are needed, so to avoid overfitting, we won't include the interaction terms in our final model. 
+As we might have suspected, none of the interaction terms are needed, so to avoid overfitting, we do not include the interaction terms in our final model. 
 
 ## Influential Observations
 
@@ -276,26 +265,22 @@ In brief, an influential observation is one that is an outlier (unusual time to 
 ```{r}
 #plot dfbeta plot
 ggcoxdiagnostics(fit4, type = "dfbeta",
-                 linear.predictions = FALSE, ggtheme = theme_bw())
-
-#identify influential points according to dfbeta
-dfbeta <- residuals(fit4, type="dfbeta")
-
-#check cd4 influential points
-data[dfbeta[,5] > 0.0005,]
+                 linear.predictions = FALSE, ggtheme = theme_bw(), 
+                 title = "Figure 6. Plot of Dfbeta values for each explanatory variable")
 ```
 
 The above index plots show that comparing the magnitudes of the largest dfbeta values to the regression coefficients suggests that none of the observations is super influential, even though some of the dfbeta values for `cd4` and `tx` are large compared with the others. Generally, we should be careful removing influential observations and throwing away data unless there's a *clear* reason we should (e.g. poor data entry), which we didn't find when checking the influential points for `cd4`. If we look at the deviance residuals for outliers, we might initially be concerned because the distribution does not seem symmetric, with many patients having negative residuals that mean they "lived too long". 
 
 ```{r}
 ggcoxdiagnostics(fit4, type = "deviance",
-                 linear.predictions = FALSE, ggtheme = theme_bw())
+                 linear.predictions = FALSE, ggtheme = theme_bw(),
+                 title = "Figure 7. Plot of Deviance for Final Model")
 ```
 
-But then, we remember that our data was imbalanced between those who lived and died to begin with! The majority of patients lived until the last time point. 
+But then, we remember that our data was imbalanced between those who lived and died to begin with, because the majority of patients lived until the last time point. Thus, we are not too concerned with influential observations adversely affecting our model. 
 
 ## Checking the Log-Linearity Assumption
-In class, we investigated the log-linearity assumption which basically verifies whether a continuous predictor variable is linearly correlated with our log hazard ratio. To do this, we first assume our continuous predictor is categorical, and then we take ratios between the instantaneous relative risks. If the ratios are all roughly the same, then we can assume a linear relationship. In our final model, the only continuous predictor we have is `cd4`, so lets categorize it in the following way.
+In class, we investigated the log-linearity assumption which basically verifies whether a continuous predictor variable is linearly correlated with our log hazard ratio. To do this, we first assume our continuous predictor is categorical, and then we take ratios between the instantaneous relative risks. If the ratios are all roughly the same, then we can assume a linear relationship. In our final model, the only continuous predictor we have is `cd4`, so lets categorize it in the following way:
 
 \begin{table}[ht]
 \centering
@@ -320,19 +305,14 @@ data2 <- data %>%
                        ifelse(cd4 > 141 & cd4 <= 210, 2, 
                               ifelse(cd4 > 211 & cd4 <= 280, 3,4))))) %>%
   mutate(cd4_group = as.factor(cd4_group))
-
 #fit our model with the categorical cd4 instead of the continuous one
 fit5 <- coxph(Surv(time, censor) ~ tx + karnof + cd4_group, data = data2)
-
 fit5 %>% tidy()
 ```
 
-Now we do some calculations. We want to see whether $ln(\frac{h_{cd4+100}(t)}{h_{cd4}(t)}) = 70\beta$ turns out to be relative constant. Between group0 and group1 of cd4, the log hazard ratio is $ln(\frac{e^{-1.49}}{e^0}) = -1.49$. Between group1 and group2 of cd4, the log hazard ratio is $\frac{e^{-2.84}}{e^{-1.49}} = -1.35$. We can already see that the coefficients for group3 and group4 are whack, which is probably due to a small number of observations within those categories. I would conclude from the log hazard ratios calculated above (they're relatively similar) that it's probably safe to say that `cd4` can be modeled as a continuous predictor. 
+Now we do some calculations. We want to see whether $ln(\frac{h_{cd4+100}(t)}{h_{cd4}(t)}) = 70\beta$ turns out to be relative constant. Between group0 and group1 of cd4, the log hazard ratio is $ln(\frac{e^{-1.49}}{e^0}) = -1.49$. Between group1 and group2 of cd4, the log hazard ratio is $\frac{e^{-2.84}}{e^{-1.49}} = -1.35$. We can already see that the coefficients for group3 and group4 are whack, which is probably due to a small number of observations within those categories. We conclude that from the similar log hazard ratios calculated above that it's probably safe to say that `cd4` can be modeled as a continuous linear predictor. 
 
-## Interpreting our final model
-The final model obtained after selecting features via LASSO was $$ln(\frac{h_i(t)}{h_0(t)}) = \beta_1tx1 + \gamma_1karnof80 + \gamma_2karnof90 + \gamma_3karnof100 + \theta_1 cd4$$
-
-#Bootstrapping (Lathan)
+# Validating our Model by Bootstrapping (Lathan)
 
 ##Challenges
 Personally, my biggest challenge when learning something new is deciding to what degree I'd like to understand the topic. There is a surface understanding of the definition, a more difficult understanding of the mathematics, and an even more difficult understanding of the conceptual applications. In the case of bootstrap, I think I will find challenging understanding the math behind how bootstrap works.
@@ -347,7 +327,6 @@ Bootstrapping validates the *process* of obtaining our original Cox PH model. It
 final.fit <- cph(Surv(time, censor) ~ tx + karnof + cd4, data = data)
 g <- update(final.fit, x = TRUE, y = TRUE)
 set.seed(47)
-
 #bootstrap validation
 validate(g, B = 300)
 ```
@@ -355,19 +334,17 @@ validate(g, B = 300)
 Training here is defined as the accuracy when evaluated on the bootstrap sample and test is when the model is applied to the original sample. Our $D_{xy}$ is 0.5632 which is the difference between the probability of concordance and the probability of discordance of pairs of predicted survival times and pairs of observed survival times. This is essentially a measure of our accuracy of our model on new data.
 
 ## Validating the SE and the Coefficients via Bootstrap
-One idea of validating the standard error and the beta coefficients that we obtained in our original coxph model is to compute our bootstrap standard errors and beta coefficients and view their distributions. In the case of standard errors, if the bootstrap standard errors are close to the original standard errors, then we feel good about the variability of our original estimate. Similarly, if the boostrapped sampling distribution of our betas seems "normal" around our original beta coefficient, then we feel good about our estimate because we can invoke some normal theory and be comfortable about the robustness of our estimated coefficients.
+One idea of validating the standard error and the beta coefficients that we obtained in our original coxph model is to compute our bootstrap standard errors and beta coefficients and view their distributions. In the case of standard errors, if the bootstrap standard errors are close to the original standard errors, then we feel good about the variability of our original estimate. Similarly, if the boostrapped sampling distribution of our betas seems "normal" around our original beta coefficient, then we feel good about our estimate because we are comfortable that our estimated coefficients were close to the bootstrapped average over many new samples. 
 
 A little note about the boostrap methodology we used: it was a fairly straightforward sample with replacement without *fixing* the proportion of censored data. In other words, in each bootstrap sample, it could vary from 700 censored events to say, 710 censored events. Future exploratory directions could include trying other bootstrap sampling methods, such as separately bootstrapping censored and event data. 
 
-Let's first compare the standard errors between our bootstrap coefficients and our likelihood coefficients from our coxph model. 
-```{r}
+We first compare the standard errors between our bootstrap coefficients and our likelihood coefficients from our coxph model. 
+```{r, echo=FALSE}
 #initialize parameters
 B <- 300
 n <- nrow(data)
-
 #initialize matrix
 bootse <- matrix(NA, nrow = 1, ncol = 5)
-
 #bootstrap model and obtain SE for each coefficient
 set.seed(47)
 for(i in 1:B) {
@@ -375,37 +352,33 @@ for(i in 1:B) {
   bootfit <- update(final.fit, data=data, subset=j)
   bootse <- rbind(bootse, as.vector(sqrt(diag(bootfit$var))))
 }
-
 #remove first row
 bootse <- bootse[-1,]
-
 #compute avg standard errors
 bootavgse <- colMeans(bootse, 1)
-
 #compare bootstrap standard errors and original standard errors
 likese <- fit4 %>% tidy() %>% pull(3)
 comparison <- tibble(likese, bootavgse, coef = c("tx1", "karnof80", "karnof90", "karnof100", "cd4"))
+```
+
+```{r}
 comparison
 ```
 
-We see that the standard errors are pretty similar! Here is a boxplot to visualize how the distribution of bootstrapped standard errors compare to our original standard error estimates. 
+We see that the standard errors are pretty similar! We also provide a boxplot to visualize how the distribution of bootstrapped standard errors compare to our original standard error estimates. 
 
-```{r}
+```{r, echo=FALSE}
 #add sd of bootstrap
 bootsd <- apply(bootse, 2, sd)
 bootse2 <- rbind(bootse, bootsd)
-
 #add original coxph SE
 bootse3 <- rbind(bootse2, likese)
-
 #turn to tibble
 bootse_tb <- as_tibble(bootse3)
-
 #tidy up bootstrap SE for plotting
 colnames(bootse_tb) <- c("tx1", "karnof80", "karnof90", "karnof100", "cd4")
 bootse_tb_tidy <- bootse_tb %>%
   gather(beta, value = tx1:cd4)
-
 #mark standard deviations of bootstrap
 bootse_tb_tidy <- bootse_tb_tidy %>%
   mutate(highlight = ifelse(row.names(bootse_tb_tidy) == 301 | 
@@ -420,7 +393,6 @@ bootse_tb_tidy <- bootse_tb_tidy %>%
                               row.names(bootse_tb_tidy) == 906 | 
                               row.names(bootse_tb_tidy) == 1208 |
                               row.names(bootse_tb_tidy) == 1510, TRUE, FALSE))
-
 ggplot(bootse_tb_tidy, aes(x = beta, y = `tx1:cd4`)) +
   geom_boxplot() +
   geom_point(data = subset(bootse_tb_tidy, highlight), #mark standard deviations in red
@@ -429,15 +401,15 @@ ggplot(bootse_tb_tidy, aes(x = beta, y = `tx1:cd4`)) +
   geom_point(data = subset(bootse_tb_tidy, highlight2), #mark original coxph SE
              aes(x = beta, y = `tx1:cd4`),
              color = "dodgerblue") + 
-  labs(y = "SE")
+  labs(y = "SE") + 
+  ggtitle("Figure 8. Distribution of Bootstrapped SE", subtitle = "Original SE (blue). Standard deviation of bootstrapped SE (red).")
 ```
 
-Let's now explore how the bootstrap betas vary compared to our original betas.
+Further, we explore how the bootstrap betas vary compared to our original betas.
 
-```{r}
+```{r, echo = FALSE}
 #initialize matrix
 bootbeta <- matrix(NA, nrow = 1, ncol = 5)
-
 #bootstrap model and obtain betas
 set.seed(47)
 for(i in 1:B) {
@@ -445,71 +417,86 @@ for(i in 1:B) {
   bootfit <- update(final.fit, data=data, subset=j)
   bootbeta <- rbind(bootbeta, as.vector(bootfit$coefficients))
 }
-
 #remove first row
 bootbeta <- bootbeta[-1,]
-
 #convert into tibble
 bootbeta_tb <- as_tibble(bootbeta)
-
-#calculate sd for bootstrapped betas
-bootbeta_sd <- apply(bootbeta_tb, 2, sd)
-bootbeta_sd <- as.vector(bootbeta_sd)
-
 #tidy up data
 colnames(bootbeta_tb) <- c("tx1", "karnof80", "karnof90", "karnof100", "cd4")
 bootbeta_tb_tidy <- bootbeta_tb %>%
   gather(beta, value = tx1:cd4) %>%
   mutate(value = `tx1:cd4`)
-
 #view densities of the each of the betas
 p1 <- ggplot(bootbeta_tb, aes(tx1)) + 
   geom_density() +
   geom_vline(xintercept = as.vector(final.fit$coefficients)[1]) + 
-  geom_vline(xintercept = c(as.vector(final.fit$coefficients)[1] - bootbeta_sd[1],
-                            as.vector(final.fit$coefficients)[1] + bootbeta_sd[1]), linetype = "dotted")
+  geom_vline(xintercept = c(as.vector(final.fit$coefficients)[1] - 1.96*0.2576,
+                            as.vector(final.fit$coefficients)[1] + 1.96*0.2576), linetype = "dotted") + geom_vline(xintercept = c(sort(bootbeta[,1])[7],
+                            sort(bootbeta[,1])[293]), color = "red")
 
 p2 <- ggplot(bootbeta_tb, aes(karnof80)) + 
   geom_density() + 
   geom_vline(xintercept = as.vector(final.fit$coefficients)[2]) + 
-  geom_vline(xintercept = c(as.vector(final.fit$coefficients)[2] - bootbeta_sd[2],
-                            as.vector(final.fit$coefficients)[2] + bootbeta_sd[2]), linetype = "dotted")
+  geom_vline(xintercept = c(as.vector(final.fit$coefficients)[2] - 1.96*0.4122,
+                            as.vector(final.fit$coefficients)[2] + 1.96*0.4122), linetype = "dotted") + geom_vline(xintercept = c(sort(bootbeta[,2])[7],
+                            sort(bootbeta[,2])[293]), color = "red")
 
 p3 <- ggplot(bootbeta_tb, aes(karnof90)) + 
   geom_density() + 
   geom_vline(xintercept = as.vector(final.fit$coefficients)[3]) + 
-  geom_vline(xintercept = c(as.vector(final.fit$coefficients)[3] - bootbeta_sd[3],
-                            as.vector(final.fit$coefficients)[3] + bootbeta_sd[3]), linetype = "dotted")
+  geom_vline(xintercept = c(as.vector(final.fit$coefficients)[3] - 1.96*0.4125,
+                            as.vector(final.fit$coefficients)[3] + 1.96*0.4125), linetype = "dotted") + geom_vline(xintercept = c(sort(bootbeta[,3])[7],
+                            sort(bootbeta[,3])[293]), color = "red")
 
 p4 <- ggplot(bootbeta_tb, aes(karnof100)) + 
   geom_density() +
   geom_vline(xintercept = as.vector(final.fit$coefficients)[4]) + 
-  geom_vline(xintercept = c(as.vector(final.fit$coefficients)[4] - bootbeta_sd[4],
-                            as.vector(final.fit$coefficients)[4] + bootbeta_sd[4]), linetype = "dotted")
+  geom_vline(xintercept = c(as.vector(final.fit$coefficients)[4] - 1.96*0.4648,
+                            as.vector(final.fit$coefficients)[4] + 1.96*0.4648), linetype = "dotted") + geom_vline(xintercept = c(sort(bootbeta[,4])[7],
+                            sort(bootbeta[,4])[293]), color = "red")
 
 p5 <- ggplot(bootbeta_tb, aes(cd4)) + 
   geom_density() +
   geom_vline(xintercept = as.vector(final.fit$coefficients)[5]) + 
-  geom_vline(xintercept = c(as.vector(final.fit$coefficients)[5] - bootbeta_sd[5],
-                            as.vector(final.fit$coefficients)[5] + bootbeta_sd[5]), linetype = "dotted")
+  geom_vline(xintercept = c(as.vector(final.fit$coefficients)[5] - 1.96*0.0031,
+                            as.vector(final.fit$coefficients)[5] + 1.96*0.0031), linetype = "dotted") + geom_vline(xintercept = c(sort(bootbeta[,5])[7],
+                            sort(bootbeta[,5])[293]), color = "red")
 
 ggarrange(p1, p2, p3, p4, p5, 
           ncol = 2, 
-          nrow = 3)
+          nrow = 3) %>%
+  annotate_figure(top = text_grob("Figure 9. Bootstrap Sampling Distribution Beta Coefficients"))
 ```
 
-As we can see the sampling distribution of the bootstrapped betas fall more or less "normally" around the original estimate (shown by the solid black line). Standard deviation is marked by the dotted lines. Thus, I feel comfortable about the original estimates of the coefficients in that they weren't estimates at the tail end of a theoretical sampling distribution. 
+As we can see, the sampling distribution of the bootstrapped betas fall more or less "normally" around the original estimate (shown by the solid black line). The 95% confidence intervals of the original estimates are displayed by dotted lines whereas the 95% confidence intervals of the bootstrap distributions are displayed by solid red lines. The confidence intervals are fairly similar, with `karnof80` and `karnof90` being slightly right skewed. Thus, I feel comfortable about the original estimates of the coefficients in that they weren't estimates at the tail end of a theoretical sampling distribution approximating a "true" distribution. 
 
-## Resources
-\begin{itemize}
-\item https://statisticalhorizons.com/multicollinearity (Great article on multicollinearity)
-\item Harrell, F. (2015) Regression Modeling Strategies. (great textbook on all things survival analysis)
-\item https://www.datacamp.com/community/tutorials/bootstrap-r (Overview of bootstrapping)
-\item https://stats.stackexchange.com/questions/22017/sample-size-and-cross-validation-methods-for-cox-regression-predictive-models
-\item https://stats.stackexchange.com/questions/18084/collinearity-between-categorical-variables (Explanation of VIF for Categorical Variables)
-\end{itemize}
+## Interpreting our final model
+The final model obtained after selecting features via LASSO was $$ln(\frac{h_i(t)}{h_0(t)}) = \beta_1tx1 + \gamma_1karnof80 + \gamma_2karnof90 + \gamma_3karnof100 + \theta_1 cd4$$. To better understand the effects of each predictor, we provide the following graphics. 
+
+```{r, echo=FALSE}
+ddist <- datadist(data)
+options(datadist = 'ddist')
+
+#plot effect of each predictor on log survival time
+ggplot(Predict(final.fit, ref.zero = T),
+       vnames = 'names',
+       sepdiscrete = 'vertical')
+```
+Figure 10. The Effects of Each Predictor on Log Survival Time
+
+This plot shows the effect of each predictor on log survival time. Predicted values have been centered. 95% confidence intervals are also shown for the continuous variables. We observe that as cd4 count increases, the log of the relative hazard decreases. As Karnofsky score decreases, the log of the relative hazard goes up, which is to be expected. It seems that the treatment group including IDV is associated with a lower log relative hazard. 
+
+```{r, echo=FALSE}
+#plot estimated change in median survival time for each predictor
+options(digit = 3)
+plot(summary(final.fit), log = TRUE, main = "Figure 11. The Estimated Change in Median Survival Time for Each Predictor")
+```
+
+This above plot portrays the estimated change in median survival time for each predictor. Different shaded areas of bar indicate different confidence levels (.9, 0.95, 0.99). We see that as the cd4 count goes from 22.25 to 135.75, the median survival time decreases by more than half. Or when the Karnofsky score goes from 70 to 90, we observe a three-fold increase in median survival time.
 
 # Gradient Boosted Trees (Madison)
+
+In addition to running a CoxPH model, we decided to try running a Cox Proportional Hazards model via a gradient boosted tree. 
 
 ## Background
 
@@ -527,15 +514,11 @@ My hope is that, in building model for this AIDs survival analysis task, I will 
 
 ## Cox Proportional Hazards in Generalized Boosted Models
 
-In 2018, Tianqi Chen and other contributors added survival analysis cabability to XGBoost. Although the change is so recent that it is not yet in the XGBoost package, it exists on the github repo's master branch for public use. 
-
-They use gradient boosting with "the loss function from penalized Cox partial likelihood..., where regularization is explicitly imposed through penalization" ("Boosted nonparametric hazards with time-dependent covariates", Lee et al.). This approach is nearly identical to the `CoxBoost` algorithm Binder and Schumacher developed and detail in their paper, "Allowing for mandatory covariates in boosting estimation of sparse high-dimensional survival models" (2008). Since the paper associated with XGBoost was published before their survival analysis add-on, I relied on Binder and Schumacher's publication to give the best explanation of the Cox algorithm underying XGBoost. Their work is summarized below.
+In 2018, Tianqi Chen and other contributors added survival analysis cabability to XGBoost. They use gradient boosting with "the loss function from penalized Cox partial likelihood..., where regularization is explicitly imposed through penalization" ("Boosted nonparametric hazards with time-dependent covariates", Lee et al.). This approach is nearly identical to the `CoxBoost` algorithm Binder and Schumacher developed and detail in their paper, "Allowing for mandatory covariates in boosting estimation of sparse high-dimensional survival models" (2008). Since the paper associated with XGBoost was published before their survival analysis add-on, I relied on Binder and Schumacher's publication to give the best explanation of the Cox algorithm underying XGBoost. Their work is summarized below.
 
 To facilitate the understanding of notation downstream, recall the Cox proportional hazards model. For observations $(t_i, \delta_i, x_i), i = 1, \dots, n$ where $t_i$ is the observed time to event for individual $i$ and $\delta_i$ is 1 if an event occurred at time $t_i$ and 0 if the observation has been censored, and $x_i = (x_{i1}, \dots, x_{ip})$ is a vector of covariates obtained at time $0$. Then the hazard function is $h(t|x_i) = h_0(t)\exp(F(x_i; \beta))$ where $h_0(t)$ is the unspecified baseline hazard and $F(x;\beta)$ is a function of the covariates dependent on a parameter vector $\beta$. We like to use a linear predictor of the form $F(x;\beta)$ where each element of the $\beta$ vector describes the influence of a single covariate. We can obtain an estimate for $\beta$ by maximizing the partial log-likelihood:
 
 $$l(\beta) = \sum_{i=1}^{n} \delta_i (F(x_i; \beta) - \log (\sum_{j:t_j \geq t_i} \exp (F(x; \beta)))$$
-
-One way 
 
 The goal of `CoxBoost` is to estimate the parameter vector $\beta$ for a linear predictor $F(x;\beta)$ in the Cox proportional hazards model.
 
@@ -543,23 +526,27 @@ They were inspired by the existing Generalized Boosted Models R package `gbm` (G
 
 The goal of any GBM (gradient boosting machine) is to learn a functional mapping from the data $\{x_i, y_i\}_{i=1}^{n}$ to $y = F(x, \beta)$ where $\beta$ is the set of parameters of the function $F$ which minimize some cost function $\sum_{i=i}^{n} \Phi(y_i, F(x_i; \beta))$. An important assumption of boosting is that $F(x) = \sum_{m=0}^{M} \rho_m f(x; \tau_m)$ where $f$ is a "weak" learner with a weight $\rho$ and set parameter $\tau_m$ (described just below). In other words, this assumption means that $F(x)$ follows an "additive" expansion form, permitting us to perform "additive training" or boosting. Thus, the set of parameters of the function $F$ is exactly $\beta = \{\rho_m, \tau_m\}_{m=1}^{M}.$ These are learned in a greedy iterative process, detailed below:
 
-\begin{enumerate}
-  \item 
-\end{enumerate}
-
 To boost a proportional hazards model, the cost function becomes the negative partial log-likelihood (Chen et al.):
 
 $\phi(y, F) = -\sum_{i=1}^{n} \delta_i (F(x_i) - \log (\sum_{j:t_j \geq t_i} e^{F(x_j)}))$
 
-
 ## Analysis
-
 See the XGBoost jupyter notebook for the analysis (can't incorporate into R yet).
 
-## Resources
+# Discussion and Concluding Remarks
+Overall, our model points to treatment, Karnofsky score, and cd4 levels as important predictors for predicting time to death (or diagnosis). As seen in Figure 10, an increase in cd4 is associated with a statistically significant decrease in the log hazard ratio, which is sensible since cd4 cell count is a well-regarded indicator for the presence of HIV -- the lower the cd4 count, the higher the activity of the HIV virus killing off these cells. As seen in Figure 11, when the Karnofsky score goes from 70 to 90, we observe a signficant three-fold increase in median survival time. This result may even serve to help validate the Karnofsky performance metric intrinsically. In addition, Figure 5, our model fit, Figures 10 and 11 all show that there is a significant difference between the control and treatment groups regarding survival, with the treatment group having a higher survival. 
+
+Thus, given that this was an experimental study, we conclude that the treatment containing IDV significantly increases survival after adjusting for cd4 levels and Karnofsky score. We are willing to generalize this claim to patients who have no more than 200 CD4 cells/cubic millimeters, at least 3 months of prior ZDV therapy, and who reside in the United States since those were the inclusion criteria for this study. 
+
+# References
 \begin{itemize}
 \item https://homes.cs.washington.edu/~tqchen/pdf/BoostedTree.pdf
 \item https://xgboost.readthedocs.io/en/latest/tutorials/model.html
 \item https://slundberg.github.io/shap/notebooks/NHANES%20I%20Survival%20Model.html
+\item https://statisticalhorizons.com/multicollinearity (Great article on multicollinearity)
+\item Harrell, F. (2015) Regression Modeling Strategies. (great textbook on all things survival analysis)
+\item https://www.datacamp.com/community/tutorials/bootstrap-r (Overview of bootstrapping)
+\item https://stats.stackexchange.com/questions/22017/sample-size-and-cross-validation-methods-for-cox-regression-predictive-models
+\item https://stats.stackexchange.com/questions/18084/collinearity-between-categorical-variables (Explanation of VIF for Categorical Variables)
 \end{itemize}
 
