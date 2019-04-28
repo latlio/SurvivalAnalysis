@@ -557,6 +557,7 @@ Thus, given that this was an experimental study, we conclude that the treatment 
 \item https://www.analyticsvidhya.com/blog/2016/03/complete-guide-parameter-tuning-xgboost-with-codes-python/
 \item https://stackoverflow.com/questions/53562813/xgboost-cox-survival-time-entry
 \item https://www.analyticsvidhya.com/blog/2016/02/complete-guide-parameter-tuning-gradient-boosting-gbm-python/
+\item https://arxiv.org/pdf/1802.03888.pdf
 
 \end{itemize}
 
