@@ -506,32 +506,38 @@ Gradient boosting is a supervised ensemble method which agglomerates simple, "we
 
 By default, XGBoost in Python has mean squared error as its loss funciton within its objective function. However, the creators of XGBoost recently added the option to instead use the Cox regression loss function for right-censored survival time data, and that is what I will be using. Predictions are then returned on the hazard ratio scale. The package also includes the negative partial log-likelihood for Cox proportional hazards regression as an evaluation metric. 
 
-After I have a good model, I'll produce visualizations of feature importance using SHAP values. I saw these in passing during my internship at Civis last summer, but never got to work with them directly and haven't yet taken the time to fully understand them. 
-
-I will be using the Python `xgboost` package to give myself the added challenge of incorporating both R and Python within one RMarkdown.
-
-My hope is that, in building model for this AIDs survival analysis task, I will come to better understand Gradient Boosting, SHAP values, and survival analysis itself.
-
 ## Cox Proportional Hazards in Generalized Boosted Models
 
-In 2018, Tianqi Chen and other contributors added survival analysis cabability to XGBoost. They use gradient boosting with "the loss function from penalized Cox partial likelihood..., where regularization is explicitly imposed through penalization" ("Boosted nonparametric hazards with time-dependent covariates", Lee et al.). This approach is nearly identical to the `CoxBoost` algorithm Binder and Schumacher developed and detail in their paper, "Allowing for mandatory covariates in boosting estimation of sparse high-dimensional survival models" (2008). Since the paper associated with XGBoost was published before their survival analysis add-on, I relied on Binder and Schumacher's publication to give the best explanation of the Cox algorithm underying XGBoost. Their work is summarized below.
+In 2018, Tianqi Chen and other contributors added survival analysis cabability to XGBoost. They use gradient boosting with "the loss function from penalized Cox partial likelihood..., where regularization is explicitly imposed through penalization" ("Boosted nonparametric hazards with time-dependent covariates", Lee et al.). Since the paper associated with XGBoost was published before their survival analysis add-on, I relied on previous publications to give the best explanation of the Cox algorithm underying XGBoost. Their work is summarized below.
 
-To facilitate the understanding of notation downstream, recall the Cox proportional hazards model. For observations $(t_i, \delta_i, x_i), i = 1, \dots, n$ where $t_i$ is the observed time to event for individual $i$ and $\delta_i$ is 1 if an event occurred at time $t_i$ and 0 if the observation has been censored, and $x_i = (x_{i1}, \dots, x_{ip})$ is a vector of covariates obtained at time $0$. Then the hazard function is $h(t|x_i) = h_0(t)\exp(F(x_i; \beta))$ where $h_0(t)$ is the unspecified baseline hazard and $F(x;\beta)$ is a function of the covariates dependent on a parameter vector $\beta$. We like to use a linear predictor of the form $F(x;\beta)$ where each element of the $\beta$ vector describes the influence of a single covariate. We can obtain an estimate for $\beta$ by maximizing the partial log-likelihood:
+But first, to facilitate the understanding of notation downstream, recall the Cox proportional hazards model. For observations $(t_i, \delta_i, x_i), i = 1, \dots, n$ where $t_i$ is the observed time to event for individual $i$ and $\delta_i$ is 1 if an event occurred at time $t_i$ and 0 if the observation has been censored, and $x_i = (x_{i1}, \dots, x_{ip})$ is a vector of covariates obtained at time $0$. Then the hazard function is $h(t|x_i) = h_0(t)\exp(F(x_i; \beta))$ where $h_0(t)$ is the unspecified baseline hazard and $F(x;\beta)$ is a function of the covariates dependent on a parameter vector $\beta$. We like to use a linear predictor of the form $F(x;\beta)$ where each element of the $\beta$ vector describes the influence of a single covariate. We can obtain an estimate for $\beta$ by maximizing the partial log-likelihood:
 
 $$l(\beta) = \sum_{i=1}^{n} \delta_i (F(x_i; \beta) - \log (\sum_{j:t_j \geq t_i} \exp (F(x; \beta)))$$
 
-The goal of `CoxBoost` is to estimate the parameter vector $\beta$ for a linear predictor $F(x;\beta)$ in the Cox proportional hazards model.
+The Cox additions to XGBoost were inspired by the existing Generalized Boosted Models R package `gbm` (Greenwell et al.) which has included the Cox proportional hazard model since 2007. In "Generalized Boosted Models: A guide to the gbm package," Greg Ridgeway details how the developers implementated the Cox proportional hazard model. According to Ridgeway, "The Cox proportional hazard model... is an incredibly useful model and the boosting framework applies quite readily with only slight modification" (Ridgeway 1). Chen et al. detail the mathematics in the context of gradient-boosting trees, summarized below.
 
-They were inspired by the existing Generalized Boosted Models R package `gbm` (Greenwell et al.) which has included the Cox proportional hazard model since 2007. In "Generalized Boosted Models: A guide to the gbm package," Greg Ridgeway details how the developers implementated the Cox proportional hazard model. According to Ridgeway, "The Cox proportional hazard model... is an incredibly useful model and the boosting framework applies quite readily with only slight modification" (Ridgeway 1). Chen et al detail the mathematics earlier in the context of gradient-boosting trees
+The goal of any GBM (gradient boosting machine) is to learn a functional mapping from the data $\{x_i, y_i\}_{i=1}^{n}$ to $y = F(x, \beta)$ where $\beta$ is the set of parameters of the function $F$ which minimize some cost function $\sum_{i=i}^{n} \Phi(y_i, F(x_i; \beta))$. An important assumption of boosting is that $F(x) = \sum_{m=0}^{M} \rho_m f(x; \tau_m)$ where $f$ is a "weak" learner with a weight $\rho$ and set parameter $\tau_m$ (described just below). In other words, this assumption means that $F(x)$ follows an "additive" expansion form, permitting us to perform "additive training" or boosting. Otherwise, there are no functional assumptions made on $F$, allowing it to be linear, tree-based, or otherwise. Thus, the set of parameters of the function $F$ is exactly $\beta = \{\rho_m, \tau_m\}_{m=1}^{M}.$ These are learned in a greedy iterative process, detailed below:
 
-The goal of any GBM (gradient boosting machine) is to learn a functional mapping from the data $\{x_i, y_i\}_{i=1}^{n}$ to $y = F(x, \beta)$ where $\beta$ is the set of parameters of the function $F$ which minimize some cost function $\sum_{i=i}^{n} \Phi(y_i, F(x_i; \beta))$. An important assumption of boosting is that $F(x) = \sum_{m=0}^{M} \rho_m f(x; \tau_m)$ where $f$ is a "weak" learner with a weight $\rho$ and set parameter $\tau_m$ (described just below). In other words, this assumption means that $F(x)$ follows an "additive" expansion form, permitting us to perform "additive training" or boosting. Thus, the set of parameters of the function $F$ is exactly $\beta = \{\rho_m, \tau_m\}_{m=1}^{M}.$ These are learned in a greedy iterative process, detailed below:
+\begin{enumerate}
+  \item Set an initial estimator $f_0(x)$
+  \item For each iteration $m \in \{1,\dots,M\}$, solve:
+  $$(\rho_m, \tau_m) = \arg\min_{\rho,\tau} \sum_{i=1}^n\Phi(y_i;F_{m-1}(x_i) + \rho f(x_i; \tau))$$
+  We next approximate this second step by
+    \begin{enumerate}
+      \item Fit $f(x; \tau_m)$ by $$\tau_m = \arg \min_{\tau} \sum_{i=1}^n (g_{im} -f(x_i;\tau))^2$$ where $$g_{im} = -[\frac{\delta \Phi(y_i, F(x_i))}{\delta F(x_i)}]_{F(x) = F_{m-1}(x)}$$
+      \item Learn $\rho$ by $$\rho_m = \arg \min_{\rho}  \sum_{i=1}^n \Phi(y_i, F_{m}(x_i) + \rho f(x_i;\tau_m)) $$
+    \end{enumerate}
+    \item Update $F_m(x) = F_{m-1}(x) + \nu\rho_m f(x; \tau_m)$ for some learning rate or shrinkage term, $\nu \in (0,1]$ (this is called `eta` in the XGBoost code). The shrinkage term is used to control overfitting and typically is valued between $0.01-0.2$. The complexity of $f(x)$ is informed by the tree depth and minimum number of samples in terminal nodes. We can also improve GBM performance by subsampling, or fitting each weak learner on a random subset of the training data, known as stochastic gradient boosting.  
+\end{enumerate}
 
-To boost a proportional hazards model, the cost function becomes the negative partial log-likelihood (Chen et al.):
+To boost a proportional hazards model, the cost function becomes the negative partial log-likelihood:
 
-$\phi(y, F) = -\sum_{i=1}^{n} \delta_i (F(x_i) - \log (\sum_{j:t_j \geq t_i} e^{F(x_j)}))$
+$$\phi(y, F) = -\sum_{i=1}^{n} \delta_i (F(x_i) - \log (\sum_{j:t_j \geq t_i} e^{F(x_j)}))$$.
+
+Inspired by Binder and Schumacher's `CoxBoost` algorithm detailed in "Allowing for mandatory covariates in boosting estimation of sparse high-dimensional survival models" (2008), the XGBoost developers include a penalization term $\lambda$ in the cost function $\Phi$. This penalty term $\lambda$ helps avoid overfitting, as the higher it is, the more cautious the update. 
 
 ## Analysis
-See the XGBoost jupyter notebook for the analysis (can't incorporate into R yet).
+See the XGBoost jupyter notebook for the analysis (I was really struggling in getting Python to work in RStudio, so putting mycode in this markdown feels like more trouble than it is worth right now!).
 
 # Discussion and Concluding Remarks
 Overall, our model points to treatment, Karnofsky score, and cd4 levels as important predictors for predicting time to death (or diagnosis). As seen in Figure 10, an increase in cd4 is associated with a statistically significant decrease in the log hazard ratio, which is sensible since cd4 cell count is a well-regarded indicator for the presence of HIV -- the lower the cd4 count, the higher the activity of the HIV virus killing off these cells. As seen in Figure 11, when the Karnofsky score goes from 70 to 90, we observe a signficant three-fold increase in median survival time. This result may even serve to help validate the Karnofsky performance metric intrinsically. In addition, Figure 5, our model fit, Figures 10 and 11 all show that there is a significant difference between the control and treatment groups regarding survival, with the treatment group having a higher survival. 
@@ -548,5 +554,9 @@ Thus, given that this was an experimental study, we conclude that the treatment 
 \item https://www.datacamp.com/community/tutorials/bootstrap-r (Overview of bootstrapping)
 \item https://stats.stackexchange.com/questions/22017/sample-size-and-cross-validation-methods-for-cox-regression-predictive-models
 \item https://stats.stackexchange.com/questions/18084/collinearity-between-categorical-variables (Explanation of VIF for Categorical Variables)
+\item https://www.analyticsvidhya.com/blog/2016/03/complete-guide-parameter-tuning-xgboost-with-codes-python/
+\item https://stackoverflow.com/questions/53562813/xgboost-cox-survival-time-entry
+\item https://www.analyticsvidhya.com/blog/2016/02/complete-guide-parameter-tuning-gradient-boosting-gbm-python/
+
 \end{itemize}
 
