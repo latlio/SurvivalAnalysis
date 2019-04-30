@@ -558,6 +558,8 @@ Thus, given that this was an experimental study, we conclude that the treatment 
 \item https://stackoverflow.com/questions/53562813/xgboost-cox-survival-time-entry
 \item https://www.analyticsvidhya.com/blog/2016/02/complete-guide-parameter-tuning-gradient-boosting-gbm-python/
 \item https://arxiv.org/pdf/1802.03888.pdf
-
+\item http://www.saedsayad.com/docs/gbm2.pdf
+\item https://arxiv.org/pdf/1701.07926.pdf
+\item https://www.hindawi.com/journals/cmmm/2013/873595/
 \end{itemize}
 
