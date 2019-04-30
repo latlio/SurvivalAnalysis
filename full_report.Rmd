@@ -109,8 +109,9 @@ ggplot(aids %>%
 We were also curious about the relationship between time to diagnosis/death and number of months of prior ZDV use for non-censored participants, since ZDV is one of the drugs in both the treatment and control regimen. Interestingly, there appeared to be no relationship whatsoever, as evidenced by the following scatterplot:
 
 ```{r, echo = FALSE}
-ggplot(non_censored, aes(x = time, y= priorzdv)) + 
+ggplot(non_censored, aes(x = time, y= priorzdv)) +
   geom_point() + 
+  #facet_grid(rows=vars(tx)) +
   ggtitle("Figure 3. Scatterplot of Number of Months of Prior ZDV Treatment vs. Time to Death/Diagnosis") +
   theme(plot.title = element_text(size = 10))
 ```
@@ -244,7 +245,10 @@ Because age had a borderline p-value, we tried removing it from the model and se
 
 ```{r, warning=FALSE}
 fit4 <- coxph(Surv(time, censor) ~ tx + karnof + cd4, data = data)
+#fit5 <- coxph(Surv(time, censor) ~ karnof + cd4 + tx*priorzdv, data = data)
 anova(fit3, fit4)
+#fit5
+#anova(fit4, fit5)
 ```
 
 It turns out, with a $\chi^2_1 = 2.23$ and a p-value of 0.1353, that age is not needed in the model.
@@ -320,7 +324,7 @@ Personally, my biggest challenge when learning something new is deciding to what
 ##A brief overview of Bootstrap and its applications to survival analysis
 Bootstrap relies on sampling with replacement of the sample data and in the case of modelling, it is used to evaluate the performance of the model on the original sample. The estimate of the likely performance of the final model on future data is estimated by the average of all the indices computed on the original sample. If we had an original sample of $n$ elements,$X$, we resample $X$ $m$ times to get new bootstrap samples ${X_i,...X_m}$ each with size $n$, derive a model in the bootstrap sample, and apply it to the original sample.
 
-Bootstrapping validates the *process* of obtaining our original Cox PH model. It also tends to provide good estimates of the future performance of our final model if the same modeling process was used in our bootstrap samples. One of the strengths of bootstrapping is thati can estimate the bias due to overfitting in our final model - let's call this quantity "optimism". You can subtract from the original sample estimate the "optimism" to get the bias-corrected estimate of predictive accuracy.
+Bootstrapping validates the *process* of obtaining our original Cox PH model. It also tends to provide good estimates of the future performance of our final model if the same modeling process was used in our bootstrap samples. One of the strengths of bootstrapping is that it can estimate the bias due to overfitting in our final model - let's call this quantity "optimism". You can subtract from the original sample estimate the "optimism" to get the bias-corrected estimate of predictive accuracy.
 
 ```{r}
 #add data to model fit so bootstrap can re-sample
@@ -496,13 +500,13 @@ This above plot portrays the estimated change in median survival time for each p
 
 # Gradient Boosted Trees (Madison)
 
-In addition to running a CoxPH model, we decided to try running a Cox Proportional Hazards model via a gradient boosted tree. 
+In addition to running a traditional CoxPH model, we decided to try running a Cox Proportional Hazards model via a gradient boosted tree. 
 
 ## Background
 
 Gradient boosting machines have gained traction in recent years, popular among Kagglers, researchers, and industry professionals alike. One of the publically availabe algorithms that has fueled this trend is XGBoost (eXtreme Gradient Boosting) developed by Tianqi Chen. XGBoost claims to be a scalable, high-performing, and one of the most computationally efficient implementations of gradient boosting machines out there. It can be used for a variety of regression, classification, and ranking problems.
 
-Gradient boosting is a supervised ensemble method which agglomerates simple, "weak" learners into a more complex whole. In boosting (also called additive training), we start with a constant prediction and iteratively add new functions on top, fixing what we have learned and adding one new model at a time will holding onto functions learned in previous rounds. We fit each model to new residuals based on the previous prediction, then minimize the loss with the addition of the latest prediction. Thus, the residuals from each previous round are used to train the model. In doing this, we are actually updating our model each time using gradient descent - hence the name "gradient" boosting! Gradient boosting is possible with almost any simple classifier, but XGBoost in particular uses an ensemble of decision trees. The objective function within XGBoost also incorporates a regularization term.
+Gradient boosting is a supervised ensemble method which agglomerates simple, "weak" learners into a more complex whole. In boosting (also called additive training), we start with a constant prediction and iteratively add new functions on top, fixing what we have learned and adding one new model at a time will holding onto functions learned in previous rounds. We fit each model based on the previous prediction, then minimize the loss with the addition of the latest prediction. In doing this, we are actually updating our model each time using gradient descent - hence the name "gradient" boosting! Gradient boosting is possible with almost any simple classifier, but XGBoost in particular uses an ensemble of decision trees. The objective function within XGBoost also incorporates a regularization term.
 
 By default, XGBoost in Python has mean squared error as its loss funciton within its objective function. However, the creators of XGBoost recently added the option to instead use the Cox regression loss function for right-censored survival time data, and that is what I will be using. Predictions are then returned on the hazard ratio scale. The package also includes the negative partial log-likelihood for Cox proportional hazards regression as an evaluation metric. 
 
@@ -525,14 +529,14 @@ The goal of any GBM (gradient boosting machine) is to learn a functional mapping
   We next approximate this second step by
     \begin{enumerate}
       \item Fit $f(x; \tau_m)$ by $$\tau_m = \arg \min_{\tau} \sum_{i=1}^n (g_{im} -f(x_i;\tau))^2$$ where $$g_{im} = -[\frac{\delta \Phi(y_i, F(x_i))}{\delta F(x_i)}]_{F(x) = F_{m-1}(x)}$$
-      \item Learn $\rho$ by $$\rho_m = \arg \min_{\rho}  \sum_{i=1}^n \Phi(y_i, F_{m}(x_i) + \rho f(x_i;\tau_m)) $$
+      \item Learn $\rho$ by $$\rho_m = \arg \min_{\rho}  \sum_{i=1}^n \Phi(y_i, F_{m-1}(x_i) + \rho f(x_i;\tau_m)) $$
     \end{enumerate}
     \item Update $F_m(x) = F_{m-1}(x) + \nu\rho_m f(x; \tau_m)$ for some learning rate or shrinkage term, $\nu \in (0,1]$ (this is called `eta` in the XGBoost code). The shrinkage term is used to control overfitting and typically is valued between $0.01-0.2$. The complexity of $f(x)$ is informed by the tree depth and minimum number of samples in terminal nodes. We can also improve GBM performance by subsampling, or fitting each weak learner on a random subset of the training data, known as stochastic gradient boosting.  
 \end{enumerate}
 
 To boost a proportional hazards model, the cost function becomes the negative partial log-likelihood:
 
-$$\phi(y, F) = -\sum_{i=1}^{n} \delta_i (F(x_i) - \log (\sum_{j:t_j \geq t_i} e^{F(x_j)}))$$.
+$$\Phi(y, F) = -\sum_{i=1}^{n} \delta_i (F(x_i) - \log (\sum_{j:t_j \geq t_i} e^{F(x_j)}))$$.
 
 Inspired by Binder and Schumacher's `CoxBoost` algorithm detailed in "Allowing for mandatory covariates in boosting estimation of sparse high-dimensional survival models" (2008), the XGBoost developers include a penalization term $\lambda$ in the cost function $\Phi$. This penalty term $\lambda$ helps avoid overfitting, as the higher it is, the more cautious the update. 
 
@@ -558,6 +562,8 @@ Thus, given that this was an experimental study, we conclude that the treatment 
 \item https://stackoverflow.com/questions/53562813/xgboost-cox-survival-time-entry
 \item https://www.analyticsvidhya.com/blog/2016/02/complete-guide-parameter-tuning-gradient-boosting-gbm-python/
 \item https://arxiv.org/pdf/1802.03888.pdf
-
+\item http://www.saedsayad.com/docs/gbm2.pdf
+\item https://arxiv.org/pdf/1701.07926.pdf
+\item https://www.hindawi.com/journals/cmmm/2013/873595/
 \end{itemize}
 
