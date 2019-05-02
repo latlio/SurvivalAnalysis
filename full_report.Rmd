@@ -19,6 +19,7 @@ library(broom)
 library(xtable)
 library(GGally)
 library(ggpubr)
+library(gbm)
 data <- read_csv("AIDSdata.csv")
 aids <- data
 #parse as factor
@@ -520,28 +521,54 @@ $$l(\beta) = \sum_{i=1}^{n} \delta_i (F(x_i; \beta) - \log (\sum_{j:t_j \geq t_i
 
 The Cox additions to XGBoost were inspired by the existing Generalized Boosted Models R package `gbm` (Greenwell et al.) which has included the Cox proportional hazard model since 2007. In "Generalized Boosted Models: A guide to the gbm package," Greg Ridgeway details how the developers implementated the Cox proportional hazard model. According to Ridgeway, "The Cox proportional hazard model... is an incredibly useful model and the boosting framework applies quite readily with only slight modification" (Ridgeway 1). Chen et al. detail the mathematics in the context of gradient-boosting trees, summarized below.
 
-The goal of any GBM (gradient boosting machine) is to learn a functional mapping from the data $\{x_i, y_i\}_{i=1}^{n}$ to $y = F(x, \beta)$ where $\beta$ is the set of parameters of the function $F$ which minimize some cost function $\sum_{i=i}^{n} \Phi(y_i, F(x_i; \beta))$. An important assumption of boosting is that $F(x) = \sum_{m=0}^{M} \rho_m f(x; \tau_m)$ where $f$ is a "weak" learner with a weight $\rho$ and set parameter $\tau_m$ (described just below). In other words, this assumption means that $F(x)$ follows an "additive" expansion form, permitting us to perform "additive training" or boosting. Otherwise, there are no functional assumptions made on $F$, allowing it to be linear, tree-based, or otherwise. Thus, the set of parameters of the function $F$ is exactly $\beta = \{\rho_m, \tau_m\}_{m=1}^{M}.$ These are learned in a greedy iterative process, detailed below:
+The goal of any GBM (gradient boosting machine) is to learn a functional mapping from the data $\{x_i, y_i\}_{i=1}^{n}$ to $y = G(x, \beta)$ where $\beta$ is the set of parameters of the function $F$ which minimize some cost function $\sum_{i=i}^{n} \Phi(y_i, G(x_i; \beta))$. An important assumption of boosting is that $G(x) = \sum_{m=0}^{M} \rho_m f(x; \tau_m)$ where $f$ is a "weak" learner with a weight $\rho$ and set parameter $\tau_m$ (described just below). In other words, this assumption means that $G(x)$ follows an "additive" expansion form, permitting us to perform "additive training" or boosting. Otherwise, there are no functional assumptions made on $F$, allowing it to be linear, tree-based, or otherwise. Thus, the set of parameters of the function $F$ is exactly $\beta = \{\rho_m, \tau_m\}_{m=1}^{M}.$ These are learned in a greedy iterative process to minimize the following cost function, the negative partial log-likelihood:
 
-\begin{enumerate}
-  \item Set an initial estimator $f_0(x)$
-  \item For each iteration $m \in \{1,\dots,M\}$, solve:
-  $$(\rho_m, \tau_m) = \arg\min_{\rho,\tau} \sum_{i=1}^n\Phi(y_i;F_{m-1}(x_i) + \rho f(x_i; \tau))$$
-  We next approximate this second step by
-    \begin{enumerate}
-      \item Fit $f(x; \tau_m)$ by $$\tau_m = \arg \min_{\tau} \sum_{i=1}^n (g_{im} -f(x_i;\tau))^2$$ where $$g_{im} = -[\frac{\delta \Phi(y_i, F(x_i))}{\delta F(x_i)}]_{F(x) = F_{m-1}(x)}$$
-      \item Learn $\rho$ by $$\rho_m = \arg \min_{\rho}  \sum_{i=1}^n \Phi(y_i, F_{m-1}(x_i) + \rho f(x_i;\tau_m)) $$
-    \end{enumerate}
-    \item Update $F_m(x) = F_{m-1}(x) + \nu\rho_m f(x; \tau_m)$ for some learning rate or shrinkage term, $\nu \in (0,1]$ (this is called `eta` in the XGBoost code). The shrinkage term is used to control overfitting and typically is valued between $0.01-0.2$. The complexity of $f(x)$ is informed by the tree depth and minimum number of samples in terminal nodes. We can also improve GBM performance by subsampling, or fitting each weak learner on a random subset of the training data, known as stochastic gradient boosting.  
-\end{enumerate}
-
-To boost a proportional hazards model, the cost function becomes the negative partial log-likelihood:
-
-$$\Phi(y, F) = -\sum_{i=1}^{n} \delta_i (F(x_i) - \log (\sum_{j:t_j \geq t_i} e^{F(x_j)}))$$.
+$$\Phi(y, G) = -\sum_{i=1}^{n} \delta_i (G(x_i) - \log (\sum_{j:t_j \geq t_i} e^{F(x_j)}))$$.
 
 Inspired by Binder and Schumacher's `CoxBoost` algorithm detailed in "Allowing for mandatory covariates in boosting estimation of sparse high-dimensional survival models" (2008), the XGBoost developers include a penalization term $\lambda$ in the cost function $\Phi$. This penalty term $\lambda$ helps avoid overfitting, as the higher it is, the more cautious the update. 
 
+The output of a trained GBM Cox model is the function $F$. When we "predict" wit a trained GBM model, we get back the $e^{G(x_i)}$ (risk score) for each individual we "predict" on. We can actually compare the hazard ratios between the XGBoost output and the traditional CoxPH model. To demonstrate this, I take the first 10 values output by XGBoost trained on the full dataset (`tx`, `sex`, `raceth`, `ivdrug`, `hemophil`, `karnof`, `cd4`, `priorzdv`, `age`) and compare it to the equivalent cox model's outputs (this was saved as `fit` earlier). 
+
+```{r}
+xgboost_out <- c( 1.3253996 ,  0.5000791 ,  0.40796974,  0.4254104 , 
+                  0.08013923, 0.07688343,  0.03202903,  0.07484766,  
+                  0.0744646 ,  5.5629425)
+coxph_out <- predict(fit, type ="risk")[1:10]
+xgb_ratios <- unlist(Map( {function (x) xgboost_out[1]/x},  xgboost_out))
+coxph_ratios <-unlist(Map( {function (x) coxph_out[1]/x},  coxph_out))
+compare <- data.frame(coxph_out, xgboost_out, coxph_ratios, xgb_ratios)
+compare
+```
+
+The last two columns of the above data frame takes the ratio between the first individual's estimated risk and the rest of the individuals considered across the two methods (CoxPH and XGBoost). Although the ratios are not always equal, they are generally similar (within ±1) except for individual number 7 as the ratio in XGBoost is much, much larger.
+
+## SHAP Values
+
+Within the past year, SHAP (SHapley Additive exPlanations) has risen in popularity as a way to assess feature importance in tree-based models. I will attempt to give a summarised explanation of what these are, but see "A Unified Approach to Interpreting Model Predictions" (2017) and "Consistent Individualized Feature Attribution for Tree Ensembles" (2019) by Lundberg et al. for more detail. 
+
+SHAP is actually just an extension of Shapley values from game theory, introduced by Lloyd Shapley in 1953. Imagine that a group of people are playing a cooperative game from which they collectively receive \$1000. They wish to fairly divide up this \$1000 among themselves based on how much each contributed toward the win. They seek to calculate a value $\zeta$ for each player which represents the dollar amount that player will get. They agree that whatever scheme they come up with to distribute the earnings must abide by the following rules, to ensure fairness:
+
+\begin{enumerate}
+  \item The sum of what each player receives should be equal to the total reward.
+  \item If two people contributed the same amount, they should receive equal proportions of the reward. 
+  \item If any player did not contribute any value, they should receive no part of the reward.
+  \item If multiple games are played, then an individual's total reward across all games should be equal to the sum of their earnings from each game. 
+\end{enumerate}
+
+Shapley showed that there is only one method of calculating $\zeta_i$ for each player $i$ which respects both rules 1 and 2. Given a set of players $P$ and a reward function $r$, the amount of money the $i$th player should receive is:
+
+$$\zeta_i = \sum_{S \subseteq P \setminus \{i\}} \frac{|S|! (|P| - |S| - 1)!}{|P|!}(r_{S\cup\{i\}} - r_{S})$$
+
+Note that $r_{S\cup\{i\}}$ is the collective reward if the $i$th player is included while $r_S$ is the reward they will get without the help of player $i$. Thus, $r_{S\cup\{i\}} - r_{S}$ represents the contribution of player $i$. The part, $\sum_{S \subseteq P \setminus \{i\}} \frac{|S|! (|P| - |S| - 1)!}{|P|!}$, sums over all possible subsets of players $S \subseteq P \setminus \{i\}$. This must be done because the effect of including a player may depend on which other players are in the game.
+
+As Lundberg et al. note, the player-reward framework translates naturally to a feature-prediction one. The set of players $P$ becomes our set of features. The reward function, which outputs the total collectvie reward, $r$ becomes the machine learning model $r(x)$ for which we wish to derive feature importances, parameterized by a vector of values of explanatory variables (imagine a single row in a tidy dataframe). The collective total reward $r(x)$ becomes the predicted value for a single observation $x$. To calculate $\zeta_i$ in this new context, for each subset of features $S \subseteq P \setminus \{i\}$, we train one model $r_{S\cup\{i\}}(x_{S\cup\{i\}})$ with feature $i$ and another model $r_{S}(x_S)$ without feature $i$, where $x_S$ represents the values of the input features from the set $S$. The predictions of these two models are compared by computing $r_{S\cup\{i\}} - r_{S}$ and we sum the result over all possible subsets $S\subseteq P \setminus \{i\}$ to yield the importance of feature $i$ for a single observation $x$:
+
+$$SHAP_i = \sum_{S \subseteq P \setminus \{i\}} \frac{|S|! (|P| - |S| - 1)!}{|P|!}(r_{S\cup\{i\}}(x_{S\cup\{i\}}) - r_{S}(x_S))$$
+
+The SHAP values uphold the original four rules established in the player-reward example. In particular note that because of rule 1, the sum of the SHAP values across all features is equal to the prediction $p$ given by the full model. That is, $\sum_{i=1}^{|F|} \zeta_i = r(x)$. Essentially, SHAP values decompose the prediction for each individual into a sum of components which correspond to the importance of each feature in the model. We have thus taken a complex, non-linear model and broken it down into individual-specific linear models (linear combinations of features based on their importance). 
+
 ## Analysis
-See the XGBoost jupyter notebook for the analysis (I was really struggling in getting Python to work in RStudio, so putting mycode in this markdown feels like more trouble than it is worth right now!).
+See the XGBoost jupyter notebook for the analysis (I was really struggling in getting Python to work in RStudio, so putting my code in this markdown feels like more trouble than it is worth right now!).
 
 # Discussion and Concluding Remarks
 Overall, our model points to treatment, Karnofsky score, and cd4 levels as important predictors for predicting time to death (or diagnosis). As seen in Figure 10, an increase in cd4 is associated with a statistically significant decrease in the log hazard ratio, which is sensible since cd4 cell count is a well-regarded indicator for the presence of HIV -- the lower the cd4 count, the higher the activity of the HIV virus killing off these cells. As seen in Figure 11, when the Karnofsky score goes from 70 to 90, we observe a signficant three-fold increase in median survival time. This result may even serve to help validate the Karnofsky performance metric intrinsically. In addition, Figure 5, our model fit, Figures 10 and 11 all show that there is a significant difference between the control and treatment groups regarding survival, with the treatment group having a higher survival. 
@@ -565,5 +592,7 @@ Thus, given that this was an experimental study, we conclude that the treatment 
 \item http://www.saedsayad.com/docs/gbm2.pdf
 \item https://arxiv.org/pdf/1701.07926.pdf
 \item https://www.hindawi.com/journals/cmmm/2013/873595/
+\item https://medium.com/@gabrieltseng/interpreting-complex-models-with-shap-values-1c187db6ec83
+\item http://papers.nips.cc/paper/7062-a-unified-approach-to-interpreting-model-predictions.pdf
 \end{itemize}
 
