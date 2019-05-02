@@ -2,7 +2,7 @@
 title: "A Bootstrap Validated Parsimonious Cox PH Regression Model Predicting AIDS Survival"
 author: "Madison Hobbs & Lathan Liou"
 class: "MATH150: Methods in Biostatistics"
-date: "May 1, 2019"
+date: "May 2, 2019"
 output: pdf_document
 editor_options: 
   chunk_output_type: console
@@ -40,7 +40,7 @@ The AIDS epidemic exploded in the early 80s, and the scientific community raced 
 
 Having obtained the data from the study, our project seeks to understand the factors associated with time of survival until an AIDS defining event or death. We first seek to understand the distributions of our time-to-event variables and the other explanatory variables through an exploratory data analysis. Next, we aim to identify the most important predictors by using a Cox Proportional Hazards model and an XGBoost model. Lastly, we seek to validate our model by a bootstrap analysis. We also have hidden most of our code in this report for readability purposes; however, you can find our full code on our GitHub: https://github.com/latlio/SurvivalAnalysis.
 
-Our analysis illuminates the importance of lower CD4 count and the IDV treatment as predictors associated with lower risk of AIDS diagnosis or death. 
+Our analysis illuminates the importance of lower CD4 count and the IDV treatment as predictors associated with lower risk of AIDS diagnosis or death. We also find that Karnofsky score is very indicative of patients' risk of diagnosis or death, as higher Karnofsky scores signal longer survival times.
 
 # Exploratory Data Analysis
 Exploratory Data Analysis (EDA) is, and should be, the *first* step when working with data. Our primary objective is to visualize the distributions of our variables to gain a clearer understanding of how they vary. 
@@ -112,7 +112,6 @@ We were also curious about the relationship between time to diagnosis/death and 
 ```{r, echo = FALSE}
 ggplot(non_censored, aes(x = time, y= priorzdv)) +
   geom_point() + 
-  #facet_grid(rows=vars(tx)) +
   ggtitle("Figure 3. Scatterplot of Number of Months of Prior ZDV Treatment vs. Time to Death/Diagnosis") +
   theme(plot.title = element_text(size = 10))
 ```
@@ -186,7 +185,7 @@ fit <- coxph(Surv(time, censor) ~ tx + sex + raceth + ivdrug + hemophil + karnof
 fit %>% tidy()
 ```
 
-The likelihood ratio $\chi^2$ statistic is 91.05 with 21 d.f of our full additive model. After considering whether variables can be mutating into new variables based on our conventional knowledge and finding none, we decided to try shrinkage to reduce our dimensionality. Here, we're using a lasso penalty Cox PH regression model to select our most important features. In brief, lasso essentially imposes an absolute value threshold penalty on each of the $\beta$ coefficients such that the variables that don't contribute much to explaining the response have their coefficients shrunk to zero. 
+After considering whether variables can be mutating into new variables based on our conventional knowledge and finding none, we decided to try shrinkage to reduce our dimensionality. Here, we're using a lasso penalty Cox PH regression model to select our most important features. In brief, lasso essentially imposes an absolute value threshold penalty on each of the $\beta$ coefficients such that the variables that don't contribute much to explaining the response have their coefficients shrunk to zero. 
 
 ```{r}
 set.seed(47)
@@ -226,7 +225,7 @@ active.coefs <- predict(lassofit, type = 'coefficients', s = cv.fit$lambda.min)
 \end{tabular}
 \end{table}
 
-We see that the dummy variable for Hispanic and American Indian, the dummy variable for a Karnofsky score of 80 and priorzdv were shrunk to 0. If we rerun our Cox PH model without priorzdv, which from our EDA was found to not be highly correlated with time, and conduct a likelihood ratio test, we find that it's not needed in the model based on a result of a $\chi^2_1 = 0.2086$ and a p-value of 0.6479
+We see that the dummy variable for Hispanic and American Indian, the dummy variable for a Karnofsky score of 80 and priorzdv were shrunk to 0. If we rerun our Cox PH model without `priorzdv`, which from our EDA was found to not be highly correlated with time, and conduct a nested model likelihood ratio test comparing the full model to the model without `priorzdv`, we find that `priorzdv` is not needed in the model based on a result of a $\chi^2_1 = 0.2086$ and a p-value of 0.6479
 
 ```{r, warning=FALSE}
 fit2 <- coxph(Surv(time, censor) ~ tx + sex + raceth + ivdrug + hemophil + karnof + cd4 + age, data = data)
@@ -265,7 +264,7 @@ As we might have suspected, none of the interaction terms are needed, so to avoi
 
 ## Influential Observations
 
-In brief, an influential observation is one that is an outlier (unusual time to failure given covariates) and has leverage (an unusual observation in the x-direction). This has the effect of strongly influencing $\beta$. To check influence, I'm using dfbeta values which measures the change in $\beta$ when a purported influential point is removed. 
+In brief, an influential observation is one that is an outlier (unusual time to failure given covariates) and has leverage (an unusual observation in the x-direction). This has the effect of strongly influencing $\beta$. To check influence, I'm using dfbeta values which measures the change in $\beta$ when a purported influential point is removed. Below, we show each feature in a separate plot. On any single feature plot, each point represents an observation and the x-axis simply shows that observation's ID. The residuals on the y-axis show the change in the estimated $\beta$ coefficient for that feature if that particular observation were removed. For example, in the CD4 plot, if the the observation with the largest residual around 0.0015 were removed, then the estimated $\beta$ coefficient for CD4 would be 0.0015 higher than it currently is, with that observation included in the model. Belsley et al. (1980) recommend that any observations with the absolute value of `dfbeta` greater than $2/\sqrt{n}$ are to be considered "influential" for that feature. In our case $2/\sqrt{n}$ = 0.069. 
 
 ```{r}
 #plot dfbeta plot
@@ -274,7 +273,9 @@ ggcoxdiagnostics(fit4, type = "dfbeta",
                  title = "Figure 6. Plot of Dfbeta values for each explanatory variable")
 ```
 
-The above index plots show that comparing the magnitudes of the largest dfbeta values to the regression coefficients suggests that none of the observations is super influential, even though some of the dfbeta values for `cd4` and `tx` are large compared with the others. Generally, we should be careful removing influential observations and throwing away data unless there's a *clear* reason we should (e.g. poor data entry), which we didn't find when checking the influential points for `cd4`. If we look at the deviance residuals for outliers, we might initially be concerned because the distribution does not seem symmetric, with many patients having negative residuals that mean they "lived too long". 
+The above index plots show that comparing the magnitudes of the largest dfbeta values to the regression coefficients suggests that none of the observations is super influential, even though some of the dfbeta values for `cd4` and `tx` are large compared with the others. Although there are points with absolute values of `dfbetas` as large as around 0.1, there are no observations which are influential for every single feature, and we consider 0.1 close enough to the cut-off of 0.069 that we would prefer not to remove data. Generally, we should be careful removing influential observations and throwing away data unless there's a *clear* reason we should (e.g. poor data entry), which we didn't find when checking the influential points for `cd4`. 
+
+We next look at residuals which measure the difference between the observed number of deaths for the $i$th individual between time 0 and time $t_i$ and the expected number of deaths based on the fitted CoxPH model. Those residuals are then transformed into deviance residuals which maintain the above interpretation while behaving like OLS residuals (the goal being to observe a random, evenly distributed point cloud). If we look at the deviance residuals for outliers (below), we might initially be concerned because the distribution does not seem symmetric, with many patients having negative residuals that mean they "lived too long". 
 
 ```{r}
 ggcoxdiagnostics(fit4, type = "deviance",
@@ -325,7 +326,7 @@ Personally, my biggest challenge when learning something new is deciding to what
 ##A brief overview of Bootstrap and its applications to survival analysis
 Bootstrap relies on sampling with replacement of the sample data and in the case of modelling, it is used to evaluate the performance of the model on the original sample. The estimate of the likely performance of the final model on future data is estimated by the average of all the indices computed on the original sample. If we had an original sample of $n$ elements,$X$, we resample $X$ $m$ times to get new bootstrap samples ${X_i,...X_m}$ each with size $n$, derive a model in the bootstrap sample, and apply it to the original sample.
 
-Bootstrapping validates the *process* of obtaining our original Cox PH model. It also tends to provide good estimates of the future performance of our final model if the same modeling process was used in our bootstrap samples. One of the strengths of bootstrapping is that it can estimate the bias due to overfitting in our final model - let's call this quantity "optimism". You can subtract from the original sample estimate the "optimism" to get the bias-corrected estimate of predictive accuracy.
+Bootstrapping validates the *process* of obtaining our original Cox PH model. It also tends to provide good estimates of the future performance of our final model if the same modeling process was used in our bootstrap samples. According to Efron, who describes an "enhanced" bootstrap, one can estimate the bias due to overfitting, let's call this quantity "optimism". Briefly how it works is (1) calculate C-index for model on original training set (2) Generate bootstrap samples and run model on each sample (3) caclulate difference between each bootstrap C-index and original C-index (4) Average all differences in (3) and call this "optimism" and (5) Subtract "optimism" fom C-index from (1) and one gets the bias-corrected index. 
 
 ```{r}
 #add data to model fit so bootstrap can re-sample
@@ -336,7 +337,7 @@ set.seed(47)
 validate(g, B = 300)
 ```
 
-Training here is defined as the accuracy when evaluated on the bootstrap sample and test is when the model is applied to the original sample. Our $D_{xy}$ is 0.5632 which is the difference between the probability of concordance and the probability of discordance of pairs of predicted survival times and pairs of observed survival times. This is essentially a measure of our accuracy of our model on new data.
+Training here is defined as the accuracy when evaluated on the bootstrap sample and test is when the model is applied to the original sample. We look at Somers' D statistic to measure the concordance between the ranks of our predicted and observed responses which says two pairs $(x_i, y_i)$ and $(x_j, y_j)$ are concordant if the ranks of both elements agree and discordant otherwise. Then $D_{xy}$ is calculated as the number of pairs that are concordant minus the number of pairs that are discordant over the total number of pairs. Our $D_{xy}$ is 0.5632 which is the difference between the probability of concordance and the probability of discordance of pairs of predicted survival times and pairs of observed survival times. This is essentially a measure of our accuracy of our model on new data.
 
 ## Validating the SE and the Coefficients via Bootstrap
 One idea of validating the standard error and the beta coefficients that we obtained in our original coxph model is to compute our bootstrap standard errors and beta coefficients and view their distributions. In the case of standard errors, if the bootstrap standard errors are close to the original standard errors, then we feel good about the variability of our original estimate. Similarly, if the boostrapped sampling distribution of our betas seems "normal" around our original beta coefficient, then we feel good about our estimate because we are comfortable that our estimated coefficients were close to the bootstrapped average over many new samples. 
@@ -370,7 +371,7 @@ comparison <- tibble(likese, bootavgse, coef = c("tx1", "karnof80", "karnof90", 
 comparison
 ```
 
-We see that the standard errors are pretty similar! We also provide a boxplot to visualize how the distribution of bootstrapped standard errors compare to our original standard error estimates. 
+We see that the standard errors are pretty similar! We also provide a boxplot to visualize how the distribution of bootstrapped standard errors compare to our original standard error estimates. We obtained these boostrapped standard errors by creating 300 boostrapped samples, and for each sample, fitting a model to get $\beta$ estimates and the standard error of each $\beta$ estimate, thus generating both a sampling distribution of $\beta$ estimates and a sampling distribution of $\beta$ estimate standard errors. In the plot below, we show the sampling distribution of these standard errors. We can see for each explanatory variable that the sampling distribution of standard errors from bootstrapping is centered around the blue dot, representing the standard error from the model fit on the original dataset. The red dots show the standard deviation of the bootstrapped sampling distribution of the standard errors for each $\beta$ estimate, which are comfortingly low!
 
 ```{r, echo=FALSE}
 #add sd of bootstrap
@@ -470,15 +471,17 @@ p5 <- ggplot(bootbeta_tb, aes(cd4)) +
 ggarrange(p1, p2, p3, p4, p5, 
           ncol = 2, 
           nrow = 3) %>%
-  annotate_figure(top = text_grob("Figure 9. Bootstrap Sampling Distribution Beta Coefficients"))
+  annotate_figure(top = text_grob("Figure 9. Bootstrap Sampling Distribution Beta Coefficients"),
+                  bottom = text_grob("Solid black line is the original beta. Dotted lines are +/-2*SE of original betas. Red lines are +/-2*SE of bootstrapped betas.", size = 8))
 ```
 
-As we can see, the sampling distribution of the bootstrapped betas fall more or less "normally" around the original estimate (shown by the solid black line). The 95% confidence intervals of the original estimates are displayed by dotted lines whereas the 95% confidence intervals of the bootstrap distributions are displayed by solid red lines. The confidence intervals are fairly similar, with `karnof80` and `karnof90` being slightly right skewed. Thus, I feel comfortable about the original estimates of the coefficients in that they weren't estimates at the tail end of a theoretical sampling distribution approximating a "true" distribution. 
+The confidence intervals are fairly similar, with `karnof80` and `karnof90` being slightly right skewed. Thus, we feel comfortable about the original estimates of the coefficients because applying normal theory seems reasonable.
 
 ## Interpreting our final model
-The final model obtained after selecting features via LASSO was $$ln(\frac{h_i(t)}{h_0(t)}) = \beta_1tx1 + \gamma_1karnof80 + \gamma_2karnof90 + \gamma_3karnof100 + \theta_1 cd4$$. To better understand the effects of each predictor, we provide the following graphics. 
 
-```{r, echo=FALSE}
+Now that we have validated our final model using Boostrapping, we interpret its output. The final model obtained after selecting features via LASSO was $$ln(\frac{h_i(t)}{h_0(t)}) = \beta_1tx1 + \gamma_1karnof80 + \gamma_2karnof90 + \gamma_3karnof100 + \theta_1 cd4$$. To better understand the effects of each predictor, we provide the following graphics. 
+
+```{r, echo=FALSE, eval=FALSE}
 ddist <- datadist(data)
 options(datadist = 'ddist')
 
@@ -487,17 +490,16 @@ ggplot(Predict(final.fit, ref.zero = T),
        vnames = 'names',
        sepdiscrete = 'vertical')
 ```
-Figure 10. The Effects of Each Predictor on Log Survival Time
-
-This plot shows the effect of each predictor on log survival time. Predicted values have been centered. 95% confidence intervals are also shown for the continuous variables. We observe that as cd4 count increases, the log of the relative hazard decreases. As Karnofsky score decreases, the log of the relative hazard goes up, which is to be expected. It seems that the treatment group including IDV is associated with a lower log relative hazard. 
 
 ```{r, echo=FALSE}
 #plot estimated change in median survival time for each predictor
+ddist <- datadist(data)
+options(datadist = 'ddist')
 options(digit = 3)
-plot(summary(final.fit), log = TRUE, main = "Figure 11. The Estimated Change in Median Survival Time for Each Predictor")
+plot(summary(final.fit), log = TRUE, main = "Figure 10. The Estimated Hazard Ratios for Each Predictor's Values")
 ```
 
-This above plot portrays the estimated change in median survival time for each predictor. Different shaded areas of bar indicate different confidence levels (.9, 0.95, 0.99). We see that as the cd4 count goes from 22.25 to 135.75, the median survival time decreases by more than half. Or when the Karnofsky score goes from 70 to 90, we observe a three-fold increase in median survival time.
+This above plot portrays the estimated hazard ratio for different values of each predictor. For the continuous variable `cd4`, it compares the hazard ratio of the 25th percentile of `cd4` values to the the 75th percentile. For the other variables, which are categorical, it compares each level, step by step. Different shaded areas of bar indicate different confidence levels (.9, 0.95, 0.99). We see that increasing `cd4` count from 22.25 to 135.75 increases the hazard (135.75 is treated as the baseline). Or, when the Karnofsky score goes from 70 to 90, we observe a three-fold increase in hazard.
 
 # Gradient Boosted Trees (Madison)
 
@@ -509,11 +511,11 @@ Gradient boosting machines have gained traction in recent years, popular among K
 
 Gradient boosting is a supervised ensemble method which agglomerates simple, "weak" learners into a more complex whole. In boosting (also called additive training), we start with a constant prediction and iteratively add new functions on top, fixing what we have learned and adding one new model at a time will holding onto functions learned in previous rounds. We fit each model based on the previous prediction, then minimize the loss with the addition of the latest prediction. In doing this, we are actually updating our model each time using gradient descent - hence the name "gradient" boosting! Gradient boosting is possible with almost any simple classifier, but XGBoost in particular uses an ensemble of decision trees. The objective function within XGBoost also incorporates a regularization term.
 
-By default, XGBoost in Python has mean squared error as its loss funciton within its objective function. However, the creators of XGBoost recently added the option to instead use the Cox regression loss function for right-censored survival time data, and that is what I will be using. Predictions are then returned on the hazard ratio scale. The package also includes the negative partial log-likelihood for Cox proportional hazards regression as an evaluation metric. 
+By default, XGBoost in Python has mean squared error as its loss funciton within its objective function. However, the creators of XGBoost recently added the option to instead use the Cox regression loss function for right-censored survival time data, and that is what we will be using. Predictions are then returned on the hazard ratio scale. The package also includes the negative partial log-likelihood for Cox proportional hazards regression as an evaluation metric. 
 
 ## Cox Proportional Hazards in Generalized Boosted Models
 
-In 2018, Tianqi Chen and other contributors added survival analysis cabability to XGBoost. They use gradient boosting with "the loss function from penalized Cox partial likelihood..., where regularization is explicitly imposed through penalization" ("Boosted nonparametric hazards with time-dependent covariates", Lee et al.). Since the paper associated with XGBoost was published before their survival analysis add-on, I relied on previous publications to give the best explanation of the Cox algorithm underying XGBoost. Their work is summarized below.
+In 2018, Tianqi Chen and other contributors added survival analysis cabability to XGBoost. They use gradient boosting with "the loss function from penalized Cox partial likelihood..., where regularization is explicitly imposed through penalization" ("Boosted nonparametric hazards with time-dependent covariates", Lee et al.). Since the paper associated with XGBoost was published before their survival analysis add-on, we relied on previous publications to give the best explanation of the Cox algorithm underying XGBoost. Their work is summarized below.
 
 But first, to facilitate the understanding of notation downstream, recall the Cox proportional hazards model. For observations $(t_i, \delta_i, x_i), i = 1, \dots, n$ where $t_i$ is the observed time to event for individual $i$ and $\delta_i$ is 1 if an event occurred at time $t_i$ and 0 if the observation has been censored, and $x_i = (x_{i1}, \dots, x_{ip})$ is a vector of covariates obtained at time $0$. Then the hazard function is $h(t|x_i) = h_0(t)\exp(F(x_i; \beta))$ where $h_0(t)$ is the unspecified baseline hazard and $F(x;\beta)$ is a function of the covariates dependent on a parameter vector $\beta$. We like to use a linear predictor of the form $F(x;\beta)$ where each element of the $\beta$ vector describes the influence of a single covariate. We can obtain an estimate for $\beta$ by maximizing the partial log-likelihood:
 
@@ -521,13 +523,13 @@ $$l(\beta) = \sum_{i=1}^{n} \delta_i (F(x_i; \beta) - \log (\sum_{j:t_j \geq t_i
 
 The Cox additions to XGBoost were inspired by the existing Generalized Boosted Models R package `gbm` (Greenwell et al.) which has included the Cox proportional hazard model since 2007. In "Generalized Boosted Models: A guide to the gbm package," Greg Ridgeway details how the developers implementated the Cox proportional hazard model. According to Ridgeway, "The Cox proportional hazard model... is an incredibly useful model and the boosting framework applies quite readily with only slight modification" (Ridgeway 1). Chen et al. detail the mathematics in the context of gradient-boosting trees, summarized below.
 
-The goal of any GBM (gradient boosting machine) is to learn a functional mapping from the data $\{x_i, y_i\}_{i=1}^{n}$ to $y = G(x, \beta)$ where $\beta$ is the set of parameters of the function $F$ which minimize some cost function $\sum_{i=i}^{n} \Phi(y_i, G(x_i; \beta))$. An important assumption of boosting is that $G(x) = \sum_{m=0}^{M} \rho_m f(x; \tau_m)$ where $f$ is a "weak" learner with a weight $\rho$ and set parameter $\tau_m$ (described just below). In other words, this assumption means that $G(x)$ follows an "additive" expansion form, permitting us to perform "additive training" or boosting. Otherwise, there are no functional assumptions made on $F$, allowing it to be linear, tree-based, or otherwise. Thus, the set of parameters of the function $F$ is exactly $\beta = \{\rho_m, \tau_m\}_{m=1}^{M}.$ These are learned in a greedy iterative process to minimize the following cost function, the negative partial log-likelihood:
+The goal of any GBM (gradient boosting machine) is to learn a functional mapping from the data $\{x_i, y_i\}_{i=1}^{n}$ to $y = G(x, \beta)$ where $\beta$ is the set of parameters of the function $G$ which minimize some cost function $\sum_{i=i}^{n} \Phi(y_i, G(x_i; \beta))$. An important assumption of boosting is that $G(x) = \sum_{m=0}^{M} \rho_m f(x; \tau_m)$ where $f$ is a "weak" learner with a weight $\rho$ and set parameter $\tau_m$ (described just below). In other words, this assumption means that $G(x)$ follows an "additive" expansion form, permitting us to perform "additive training" or boosting. Otherwise, there are no functional assumptions made on $F$, allowing it to be linear, tree-based, or otherwise. Thus, the set of parameters of the function $G$ is exactly $\beta = \{\rho_m, \tau_m\}_{m=1}^{M}.$ These are learned in a greedy iterative process to minimize the following cost function, the negative partial log-likelihood:
 
 $$\Phi(y, G) = -\sum_{i=1}^{n} \delta_i (G(x_i) - \log (\sum_{j:t_j \geq t_i} e^{F(x_j)}))$$.
 
 Inspired by Binder and Schumacher's `CoxBoost` algorithm detailed in "Allowing for mandatory covariates in boosting estimation of sparse high-dimensional survival models" (2008), the XGBoost developers include a penalization term $\lambda$ in the cost function $\Phi$. This penalty term $\lambda$ helps avoid overfitting, as the higher it is, the more cautious the update. 
 
-The output of a trained GBM Cox model is the function $F$. When we "predict" wit a trained GBM model, we get back the $e^{G(x_i)}$ (risk score) for each individual we "predict" on. We can actually compare the hazard ratios between the XGBoost output and the traditional CoxPH model. To demonstrate this, I take the first 10 values output by XGBoost trained on the full dataset (`tx`, `sex`, `raceth`, `ivdrug`, `hemophil`, `karnof`, `cd4`, `priorzdv`, `age`) and compare it to the equivalent cox model's outputs (this was saved as `fit` earlier). 
+The output of a trained GBM Cox model is the function $F$. When we "predict" wit a trained GBM model, we get back the $e^{G(x_i)}$ (risk score) for each individual we "predict" on. We can actually compare the hazard ratios between the XGBoost output and the traditional CoxPH model. To demonstrate this, we take the first 10 values output by XGBoost trained on the full dataset (`tx`, `sex`, `raceth`, `ivdrug`, `hemophil`, `karnof`, `cd4`, `priorzdv`, `age`) and compare it to the equivalent cox model's outputs (this was saved as `fit` earlier). 
 
 ```{r}
 xgboost_out <- c( 1.3253996 ,  0.5000791 ,  0.40796974,  0.4254104 , 
@@ -544,7 +546,7 @@ The last two columns of the above data frame takes the ratio between the first i
 
 ## SHAP Values
 
-Within the past year, SHAP (SHapley Additive exPlanations) has risen in popularity as a way to assess feature importance in tree-based models. I will attempt to give a summarised explanation of what these are, but see "A Unified Approach to Interpreting Model Predictions" (2017) and "Consistent Individualized Feature Attribution for Tree Ensembles" (2019) by Lundberg et al. for more detail. 
+Within the past year, SHAP (SHapley Additive exPlanations) has risen in popularity as a way to assess feature importance in tree-based models. We attempt to give a summarised explanation of what these are, but see "A Unified Approach to Interpreting Model Predictions" (2017) and "Consistent Individualized Feature Attribution for Tree Ensembles" (2019) by Lundberg et al. for more detail. 
 
 SHAP is actually just an extension of Shapley values from game theory, introduced by Lloyd Shapley in 1953. Imagine that a group of people are playing a cooperative game from which they collectively receive \$1000. They wish to fairly divide up this \$1000 among themselves based on how much each contributed toward the win. They seek to calculate a value $\zeta$ for each player which represents the dollar amount that player will get. They agree that whatever scheme they come up with to distribute the earnings must abide by the following rules, to ensure fairness:
 
@@ -566,33 +568,4 @@ As Lundberg et al. note, the player-reward framework translates naturally to a f
 $$SHAP_i = \sum_{S \subseteq P \setminus \{i\}} \frac{|S|! (|P| - |S| - 1)!}{|P|!}(r_{S\cup\{i\}}(x_{S\cup\{i\}}) - r_{S}(x_S))$$
 
 The SHAP values uphold the original four rules established in the player-reward example. In particular note that because of rule 1, the sum of the SHAP values across all features is equal to the prediction $p$ given by the full model. That is, $\sum_{i=1}^{|F|} \zeta_i = r(x)$. Essentially, SHAP values decompose the prediction for each individual into a sum of components which correspond to the importance of each feature in the model. We have thus taken a complex, non-linear model and broken it down into individual-specific linear models (linear combinations of features based on their importance). 
-
-## Analysis
-See the XGBoost jupyter notebook for the analysis (I was really struggling in getting Python to work in RStudio, so putting my code in this markdown feels like more trouble than it is worth right now!).
-
-# Discussion and Concluding Remarks
-Overall, our model points to treatment, Karnofsky score, and cd4 levels as important predictors for predicting time to death (or diagnosis). As seen in Figure 10, an increase in cd4 is associated with a statistically significant decrease in the log hazard ratio, which is sensible since cd4 cell count is a well-regarded indicator for the presence of HIV -- the lower the cd4 count, the higher the activity of the HIV virus killing off these cells. As seen in Figure 11, when the Karnofsky score goes from 70 to 90, we observe a signficant three-fold increase in median survival time. This result may even serve to help validate the Karnofsky performance metric intrinsically. In addition, Figure 5, our model fit, Figures 10 and 11 all show that there is a significant difference between the control and treatment groups regarding survival, with the treatment group having a higher survival. 
-
-Thus, given that this was an experimental study, we conclude that the treatment containing IDV significantly increases survival after adjusting for cd4 levels and Karnofsky score. We are willing to generalize this claim to patients who have no more than 200 CD4 cells/cubic millimeters, at least 3 months of prior ZDV therapy, and who reside in the United States since those were the inclusion criteria for this study. 
-
-# References
-\begin{itemize}
-\item https://homes.cs.washington.edu/~tqchen/pdf/BoostedTree.pdf
-\item https://xgboost.readthedocs.io/en/latest/tutorials/model.html
-\item https://slundberg.github.io/shap/notebooks/NHANES%20I%20Survival%20Model.html
-\item https://statisticalhorizons.com/multicollinearity (Great article on multicollinearity)
-\item Harrell, F. (2015) Regression Modeling Strategies. (great textbook on all things survival analysis)
-\item https://www.datacamp.com/community/tutorials/bootstrap-r (Overview of bootstrapping)
-\item https://stats.stackexchange.com/questions/22017/sample-size-and-cross-validation-methods-for-cox-regression-predictive-models
-\item https://stats.stackexchange.com/questions/18084/collinearity-between-categorical-variables (Explanation of VIF for Categorical Variables)
-\item https://www.analyticsvidhya.com/blog/2016/03/complete-guide-parameter-tuning-xgboost-with-codes-python/
-\item https://stackoverflow.com/questions/53562813/xgboost-cox-survival-time-entry
-\item https://www.analyticsvidhya.com/blog/2016/02/complete-guide-parameter-tuning-gradient-boosting-gbm-python/
-\item https://arxiv.org/pdf/1802.03888.pdf
-\item http://www.saedsayad.com/docs/gbm2.pdf
-\item https://arxiv.org/pdf/1701.07926.pdf
-\item https://www.hindawi.com/journals/cmmm/2013/873595/
-\item https://medium.com/@gabrieltseng/interpreting-complex-models-with-shap-values-1c187db6ec83
-\item http://papers.nips.cc/paper/7062-a-unified-approach-to-interpreting-model-predictions.pdf
-\end{itemize}
 
